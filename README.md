@@ -8,3 +8,5 @@ The main server code is packaged into puakma.jar and is very small (~600Kb). Pua
 The web framework was orginally based on the PRG web pattern: Post, Redirect, Get. https://en.wikipedia.org/wiki/Post/Redirect/Get but it's up to the individual developer to implement whatever pattern they ultimately choose.
 
 To develop apps on top of this framework we recommend the Vortex IDE (eclipse based). For underlying server, we recommend Linux and JRE 6 or above.
+
+A number of customers are using this to run their company intranets and web applications.
