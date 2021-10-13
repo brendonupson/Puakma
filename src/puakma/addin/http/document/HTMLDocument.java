@@ -75,21 +75,21 @@ public class HTMLDocument extends Document implements Cloneable
 	/**
 	 * For standard 'post' forms where parameter content is fred=1&john=2 etc
 	 */
-	public HTMLDocument(SystemContext paramSystem, HTTPSessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, int iContentLength, String sCharSet)
+	public HTMLDocument(SystemContext paramSystem, HTTPSessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, long lContentLength, String sCharSet)
 	{    
-		super(paramSystem, paramSession.getSessionContext(), szPageName, is, szContentType, iContentLength, sCharSet);
+		super(paramSystem, paramSession.getSessionContext(), szPageName, is, szContentType, lContentLength, sCharSet);
 		m_sess = paramSession;
-		if(iContentLength>0) m_bDataPosted = true;
+		if(lContentLength>0) m_bDataPosted = true;
 	}
 
 
 	/**
 	 * Mulitpart mime constructor
 	 */
-	public HTMLDocument(SystemContext paramSystem, HTTPSessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, String szBoundary, int iContentLength, String sCharSet)
+	public HTMLDocument(SystemContext paramSystem, HTTPSessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, String szBoundary, long lContentLength, String sCharSet)
 	{    
-		super(paramSystem, paramSession.getSessionContext(), szPageName, is, szContentType, szBoundary, iContentLength, sCharSet);
-		if(iContentLength>0) m_bDataPosted = true;
+		super(paramSystem, paramSession.getSessionContext(), szPageName, is, szContentType, szBoundary, lContentLength, sCharSet);
+		if(lContentLength>0) m_bDataPosted = true;
 		m_sess = paramSession;
 	}
 

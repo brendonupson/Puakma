@@ -163,6 +163,11 @@ public class HTMLDocument {
 		al.add(tag);
 		tags.put(szName, al);
 	}
+	
+	public Hashtable getAllTags()
+	{
+		return tags;
+	}
 
 	public ArrayList getTagsByName(String tagName) 
 	{

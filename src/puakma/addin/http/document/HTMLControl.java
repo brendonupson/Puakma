@@ -926,6 +926,8 @@ public class HTMLControl
 		
 		return pSession.getStringTableEntry(Name, null);
 	}
+	
+	
 
 	/**
 	 * For textareas, replace all "<" with "&lt;", and ">" with "&gt;". Typically this is used
@@ -950,6 +952,7 @@ public class HTMLControl
 			sWorkValue = sStart + "&lt;" + sEnd;
 			iPos=sWorkValue.indexOf('<');
 		}
+		
 		iPos=sWorkValue.indexOf('>');
 		while(iPos>=0)
 		{
@@ -959,6 +962,7 @@ public class HTMLControl
 			iPos=sWorkValue.indexOf('>');
 		}
 
+		
 		return sWorkValue;
 	}
 
@@ -1380,7 +1384,7 @@ public class HTMLControl
 				else
 				{
 					sbReturn.append("<option value=\"");
-					sbReturn.append(sValue);            
+					sbReturn.append(HTMLControlChoice.getEscapedTextForValueAttribute(sValue));            
 					sbReturn.append("\" selected=\"selected\">");
 					if(MissingValueText.length()==0)
 						sbReturn.append(sValue);

@@ -36,6 +36,7 @@ import java.util.Calendar;
 import puakma.addin.pmaAddInStatusLine;
 import puakma.coder.CoderB64;
 import puakma.error.ErrorDetect;
+import puakma.error.pmaLog;
 import puakma.system.SystemContext;
 import puakma.system.pmaThreadInterface;
 import puakma.util.MailAddress;
@@ -57,6 +58,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 	private String m_sFrom="";
 	private String m_sSmartHost="";
 	private int m_iSmartHostPort=25;
+	private boolean m_bSmartHostPortSecure = false;
 	private int m_iSocketTimeoutSeconds=60;
 	private long m_lUnique=0;
 
@@ -73,8 +75,9 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 
 		m_sSmartHost = pMailer.getSmartHost();
 		m_iSmartHostPort = pMailer.getSmartHostPort();
+		m_bSmartHostPortSecure = pMailer.isSmartHostPortSecure();
 		if(mail_socket_timeout_seconds>1) m_iSocketTimeoutSeconds = mail_socket_timeout_seconds;
-		
+
 	}
 
 
@@ -86,7 +89,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		int iDeliveryCount=0;
 		pStatus = pMailer.createStatusLine(" " + getErrorSource());
 		Connection cx=null;
-		String szReply; //message sent flag
+		String sReply; //message sent flag
 
 		//System.out.println(Thread.currentThread().getName() + " running..." );
 		pStatus.setStatus("Writing to temp file");
@@ -105,26 +108,40 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 				if(iRetries<pMailer.getMailMaxRetryCount())
 				{
 					String szRecipient = RS.getString("Recipient");          
-					szReply = "";
-					if(MailHeaderID>0) szReply = transferMail(szRecipient, MailHeaderID);
-					if(szReply.length()==0)
+					sReply = "";
+					if(MailHeaderID>0) 
+					{
+						sReply = transferMail(szRecipient, MailHeaderID);
+						pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTAL);
+					}
+					if(sReply.length()==0)
 					{
 						pStatus.setStatus("Removing header record");
 						deleteHeader(MailHeaderID);
-						iDeliveryCount++;
+						iDeliveryCount++;												
 					}
 					else //send failure...
 					{
-						if(szReply.charAt(0) >= '0' && szReply.charAt(0) <= '9')
+						pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTALSENDERRORS);
+
+						if(sReply.equalsIgnoreCase("DEAD"))
 						{
-							pSystem.doInformation("MailTransferThread.MailFail", new String[]{szReply}, this);
+							pStatus.setStatus("Marking mail as DEAD");
+							markMailDead(MailHeaderID);							
+							continue;
+						}
+
+						if(sReply.charAt(0) >= '0' && sReply.charAt(0) <= '9')
+						{
+							pSystem.doInformation("MailTransferThread.MailFail", new String[]{sReply}, this);
 							deleteHeader(MailHeaderID);
 						}
 						else
 						{
 							pStatus.setStatus("Re-Queueing mail for retransmission");
-							queueMail(MailHeaderID, szReply, szRecipient);
-						}
+							queueMail(MailHeaderID, sReply, szRecipient);
+							pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTALREQUEUED);
+						}						
 					}
 				}//iRetries
 				else
@@ -235,9 +252,10 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 				sTransferHost = m_sSmartHost;
 				String sUserName = pSystem.getSystemProperty("MAILERSmartHostUserName");
 				String sPassword = pSystem.getSystemProperty("MAILERSmartHostPassword");
+
 				if(sUserName!=null) smtp.setUserNamePassword(sUserName, sPassword);
 				pStatus.setStatus("Connecting to smarthost SMTP server "+sTransferHost +" for " + maTo.getBasicEmailAddress());
-				smtp.connect( m_sSmartHost, m_iSmartHostPort, pMailer.getHostName() );
+				smtp.connect( m_sSmartHost, m_iSmartHostPort, m_bSmartHostPortSecure, pMailer.getHostName() );
 			}
 			pSystem.doInformation("MailTransferThread.MailStart", new String[]{m_sMessageSerialID, sTransferHost, maTo.getBasicEmailAddress()}, this);        
 			pStatus.setStatus("MAIL FROM: " + maTo.getBasicEmailAddress());
@@ -248,26 +266,44 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 			NumberFormat nf = NumberFormat.getInstance();
 			nf.setMaximumFractionDigits(0);
 			pStatus.setStatus("Transferring mail for " + maTo.getBasicEmailAddress() + ", " + nf.format(dLen) +"Kb");
-			smtp.sendFile(m_fMessageContent.getAbsolutePath());
+			if(smtp.sendFile(m_fMessageContent.getAbsolutePath()))
+			{
+				pSystem.doInformation("MailTransferThread.MailOK", new String[]{m_sMessageSerialID, sTransferHost, maTo.getBasicEmailAddress()}, this);
+			}
+			else
+			{				
+				pSystem.doError("MailTransferThread.MailError", new String[]{m_sMessageSerialID, sTransferHost, maTo.getBasicEmailAddress(), maFrom.getBasicEmailAddress(), smtp.getHostResponses()}, this);				
+			}
 			pStatus.setStatus("Disconnecting...");
 			smtp.logoff();
 			smtp.disconnect();
 		}
 		catch(Exception smtp_ex)
 		{
+
 			try{ smtp.disconnect(); } catch(Exception e){}
-			pSystem.doError("MailTransferThread.SMTPError", new String[]{sTransferHost, maTo.getBasicEmailAddress(), smtp_ex.getMessage()}, this);
+			pSystem.doError("MailTransferThread.SMTPError", new String[]{sTransferHost, maTo.getBasicEmailAddress(), smtp_ex.getMessage(), smtp.getHostResponses()}, this);
+			smtp_ex.printStackTrace();
+			pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTALSENDERRORS);
 			try 
 			{
 				int iReplyCode = smtp.getReplyCode();
 				//allow any 400 error, treat as a temporary error
-				if(iReplyCode>=400 && iReplyCode<500) return "REQUEUE"; //reply with anything except a number!
+				if(iReplyCode>=400 && iReplyCode<500) 
+				{
+					pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTALREQUEUED);
+					return "REQUEUE"; //reply with anything except a number!
+				}
+				if(iReplyCode>=500 && iReplyCode<600) //permanent error
+				{
+					return "DEAD";
+				}
 			} 
 			catch (Exception e) {} //temporary error.
 
 			return smtp_ex.getMessage();
 		}
-		pSystem.doInformation("MailTransferThread.MailOK", new String[]{m_sMessageSerialID, sTransferHost, maTo.getBasicEmailAddress()}, this);
+
 		return "";
 	}
 
@@ -313,7 +349,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 			m_fMessageContent = File.createTempFile(String.valueOf(pSystem.getUniqueNumber())+"_mailout_", null, pSystem.getTempDir());
 			FileOutputStream fout = new FileOutputStream(m_fMessageContent);
 			Statement Stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-			
+
 
 			String sFlags=null;
 			szQuery = "SELECT Flags FROM MAILBODY WHERE MailBodyID=" + MailBodyID;
@@ -401,7 +437,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		{
 			if(bFirstRow)
 			{
-				String szBody = RS.getString("Body");
+				String szBody = fixBareLineFeeds(RS.getString("Body")); //FIXME inject CR for bare LFs
 				String szSubject = RS.getString("Subject");
 				m_sFrom = RS.getString("Sender");
 				maFrom = new MailAddress(m_sFrom);
@@ -525,6 +561,39 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		RS.close();
 		Stmt.close();
 	}
+
+	/**
+	 * https://searchwindowsserver.techtarget.com/tip/Beware-of-bare-linefeeds-in-Exchange-Server-email
+	 * RFC 822bis does not allow bare LF (\n) in email body. These must all be converted to CRLF (\r\n)
+	 * @param sBody
+	 * @return
+	 */
+	private String fixBareLineFeeds(String sBody) 
+	{
+		if(sBody==null) return "";
+
+		char CR = '\r';
+		char LF = '\n';
+		int iFixCount = 0;
+		boolean bLastCharWasCR = false;
+		StringBuilder sb = new StringBuilder(sBody.length()+50);
+		for(int i=0; i<sBody.length(); i++)
+		{
+			char c = sBody.charAt(i);
+			if(c==LF && !bLastCharWasCR) 
+			{
+				sb.append(CR);
+				iFixCount++;
+			}
+			sb.append(c);
+
+			bLastCharWasCR = (c==CR);
+		}
+
+		if(iFixCount>0) pSystem.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "fixBareLineFeeds() - inserted " + iFixCount + " CRs", this);
+		return sb.toString();
+	}
+
 
 	/**
 	 * Code to make the next mime boundary

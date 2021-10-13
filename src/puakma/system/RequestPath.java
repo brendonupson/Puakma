@@ -128,9 +128,10 @@ public class RequestPath
 
 	public static void main(String args[])
 	{
-		//String sURL = "http://junk.com:8080/test/x.pma/Somepage?OpenPage&Id=3";
+		String sURL = "http://junk.com:8080/test/x.pma/Somepage?OpenPage&Id=3";
 		//String sURL = "http://notestest01.odense.dk/Wiki/BMF/ITVidenTEST_2.nsf/dx/Tjek_telefon_fra_server";
-		String sURL = "/test/x.pma/files/test.png?Id=3";
+		//String sURL = "/test/x.pma/files/test.png?Id=3";
+		//String sURL = "/dev/saml.pma/acs?code=4/0AX4XfWgXokkJyVCatYdNIzylHQ7HwrfHi9kMfTCjEkNsLzcpqZVm47v1co6LDoo2EBLV9Q&scope=email%20https://www.googleapis.com/auth/userinfo.email%20openid";
 		RequestPath r = new RequestPath(sURL);
 		r.setUseTornadoEscaping(false);
 		//r.Host = "";
@@ -148,8 +149,9 @@ public class RequestPath
 
 		if(sFullPath==null || sFullPath.length()==0) return;
 
+		int iQuestionPos = sFullPath.indexOf('?');
 		int iPos = sFullPath.indexOf("://");
-		if(iPos>=0)
+		if(iPos>=0 && (iQuestionPos<0 || iPos<iQuestionPos))
 		{
 			Protocol = sFullPath.substring(0, iPos);
 			sFullPath = sFullPath.substring(iPos+3);
@@ -321,7 +323,7 @@ public class RequestPath
 	 */
 	public String toString()
 	{
-		return "Group=[" + Group + "] Application=[" + Application + "] FileExt=["+FileExt+"] DesignElementName=[" + DesignElementName + "] Action=[" + Action + "] Parameters=[" + Parameters + "] DesignType=["+DesignType+"]";
+		return "Protocol=["+Protocol + "] Port=["+Port+"] Host=["+Host+"] Group=[" + Group + "] Application=[" + Application + "] FileExt=["+FileExt+"] DesignElementName=[" + DesignElementName + "] Action=[" + Action + "] Parameters=[" + Parameters + "] DesignType=["+DesignType+"]";
 	}
 
 	/**

@@ -539,10 +539,6 @@ public class pmaClassLoader extends ClassLoader
 	{
 		ZipFile zipfile = null; 
 
-		//System.out.println("loadResourceFromZipfile() " + file.getName() + " " + name);  
-		//if(name.indexOf("_US")>0 && name.indexOf("/derby")>0) name = name.replaceAll("_US", "");
-		//if(name.equals("org/apache/derby/loc/drda/messages_en_US.properties")) name = "org/apache/derby/loc/drda/messages_en.properties";
-
 		try 
 		{
 			zipfile = new ZipFile(file);

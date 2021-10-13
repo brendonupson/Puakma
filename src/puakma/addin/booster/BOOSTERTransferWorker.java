@@ -134,11 +134,11 @@ public class BOOSTERTransferWorker
 				m_lTotalTime=System.currentTimeMillis();
 				//readclient
 				if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Reading client headers", m_Parent);                
-				int iContentLength = readHeaders(environment_lines, true); //read client headers
+				long lContentLength = readHeaders(environment_lines, true); //read client headers
 				long lMaxUpload = m_Parent.getMaxUploadBytes();
-				if(lMaxUpload>=0 && iContentLength>lMaxUpload)
+				if(lMaxUpload>=0 && lContentLength>lMaxUpload)
 				{
-					String sMessage = pmaLog.parseMessage(m_Parent.m_pSystem.getSystemMessageString("BOOSTER.ContentLengthLimit"), new String[]{String.valueOf(iContentLength), String.valueOf(lMaxUpload), m_sURI });
+					String sMessage = pmaLog.parseMessage(m_Parent.m_pSystem.getSystemMessageString("BOOSTER.ContentLengthLimit"), new String[]{String.valueOf(lContentLength), String.valueOf(lMaxUpload), m_sURI });
 					m_Parent.m_pSystem.doError(sMessage, m_Parent);
 					m_bRunning = false; //drop connection
 					sendHTTPResponse(414, sMessage, null, "text/html", Util.utf8FromString(sMessage), true);
@@ -201,7 +201,7 @@ public class BOOSTERTransferWorker
 
 							//out_lines.add("Host: "+m_sRequestedHost);
 							if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Serving from cache: "+m_sURI, m_Parent);
-							HTTPLogEntry stat = new HTTPLogEntry(m_Parent.getMimeExcludes(), environment_lines, out_lines, m_sRequestLine, sContentType, iContentLength, (long)m_iInboundSize, 200, m_Parent.getClientIPAddress(), m_Parent.getClientHostName(), m_Parent.m_pSystem.getSystemHostName(), m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), null); 
+							HTTPLogEntry stat = new HTTPLogEntry(m_Parent.getMimeExcludes(), environment_lines, out_lines, m_sRequestLine, sContentType, lContentLength, (long)m_iInboundSize, 200, m_Parent.getClientIPAddress(), m_Parent.getClientHostName(), m_Parent.m_pSystem.getSystemHostName(), m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), null); 
 
 							m_Parent.writeTextStatLog(stat);							
 						}
@@ -216,7 +216,7 @@ public class BOOSTERTransferWorker
 					else //not in cache
 					{
 						m_Parent.getAddIn().incrementStatistic(BOOSTER.STATISTIC_KEY_CACHEMISSESPERHOUR, 1);
-						if(iContentLength==CONTENT_ERROR) break;
+						if(lContentLength==CONTENT_ERROR) break;
 						if(!m_bNoServerConnect) //header processor is not doing the work
 						{ 
 							//check if we are asking for a local file
@@ -284,7 +284,7 @@ public class BOOSTERTransferWorker
 							String sContentType = Util.getMIMELine(environment_lines, "Content-Type"); 
 							addSessionIDToHeaders(environment_lines);
 							//send to server                  
-							processDataPackage(iContentLength, environment_lines, sContentType, true);  
+							processDataPackage(lContentLength, environment_lines, sContentType, true);  
 							m_lWebServerTime=System.currentTimeMillis();
 							m_lTotalReplyTime=System.currentTimeMillis();
 
@@ -293,7 +293,7 @@ public class BOOSTERTransferWorker
 							//read server's reply
 							//TODO 411 reply if http1.1 and no content length specified.
 							if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Reading server headers", m_Parent);
-							iContentLength = readHeaders(environment_lines, false);
+							lContentLength = readHeaders(environment_lines, false);
 							m_lWebServerTime=System.currentTimeMillis()-m_lWebServerTime;
 							sContentType = Util.getMIMELine(environment_lines, "Content-Type"); 
 							if(sContentType!=null && sContentType.toLowerCase().startsWith("text/")) m_Parent.updateTextPageServeCount();
@@ -314,7 +314,7 @@ public class BOOSTERTransferWorker
                                 m_bRunning=false;
                                 break;
                             }*/
-							processDataPackage(iContentLength, environment_lines, sContentType, false);                    
+							processDataPackage(lContentLength, environment_lines, sContentType, false);                    
 						} //if !NoServerConnect
 					}//not found in cache
 				}//else reverse proxy
@@ -526,11 +526,11 @@ public class BOOSTERTransferWorker
 	/**
 	 * bIsClientConnection=true means we are reading from the client
 	 */
-	private void processDataPackage(int iContentLength, ArrayList environment_lines, String sContentType, boolean bIsClientConnection) throws Exception
+	private void processDataPackage(long lContentLength, ArrayList environment_lines, String sContentType, boolean bIsClientConnection) throws Exception
 	{
 		if(m_Parent.isDebug())
 			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" processDataPackage()", m_Parent);
-		float fBefore = iContentLength;
+		float fBefore = lContentLength;
 		float fAfter=0;
 		int iReplyCode = getReplyCode(environment_lines);
 		boolean bCacheIsCompressed = false;
@@ -590,15 +590,15 @@ public class BOOSTERTransferWorker
 		}
 		//adjust headers here                 
 		//a MAX_GZIP_SIZE 0f -1 means no limit on object size for zipping
-		if(!bIsClientConnection && (iContentLength<MAX_GZIP_SIZE || MAX_GZIP_SIZE<0) && sContentEncoding==null && m_Parent.shouldGZipOutput(m_sURI, sContentType))
+		if(!bIsClientConnection && (lContentLength<MAX_GZIP_SIZE || MAX_GZIP_SIZE<0) && sContentEncoding==null && m_Parent.shouldGZipOutput(m_sURI, sContentType))
 		{    
 			fBefore = 0;
 			float fRatio=0;
 			//System.out.println(m_lRequestID + "pre len="+iContentLength + " replycode="+iReplyCode);
 			//long lStart = System.currentTimeMillis();
-			int iReadLen = iContentLength;
-			if(bChunkedTransferEncoding) iReadLen=-1;
-			byte[] http_response_body = processGZIPContent(iReadLen, iReplyCode);
+			long lReadLen = lContentLength;
+			if(bChunkedTransferEncoding) lReadLen=-1;
+			byte[] http_response_body = processGZIPContent(lReadLen, iReplyCode);
 			//System.out.println(m_lRequestID + "post processGZIPContent() " + (System.currentTimeMillis()-lStart) );
 			//bufCacheable = http_response_body;
 			if(http_response_body!=null) fBefore = http_response_body.length;
@@ -638,7 +638,7 @@ public class BOOSTERTransferWorker
 			if(bChunkedTransferEncoding)
 				processChunkedContent(bIsClientConnection); 
 			else
-				bufCacheable = processContent(iContentLength, iReplyCode, bIsClientConnection); 
+				bufCacheable = processContent(lContentLength, iReplyCode, bIsClientConnection); 
 			//update stats
 			if(!bIsClientConnection) m_Parent.updateBytesSent(fBefore);
 		} 
@@ -664,7 +664,7 @@ public class BOOSTERTransferWorker
 			m_Parent.writeCompressionStatLog(m_sURI, (int)fBefore, (int)fAfter, (int)m_lWebServerTime, (int)m_lTotalReplyTime, sContentType);
 
 			//StatisticEntry stat = new StatisticEntry(m_Parent.getMimeExcludes(), m_sRequestLine, sContentType, iContentLength, m_iInboundSize, iReplyCode, m_Parent.getClientIPAddress(), m_sRequestedHost, m_sUserName, m_sUserAgent, m_sReferer, m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), m_sMethod);            
-			HTTPLogEntry stat = new HTTPLogEntry(m_Parent.getMimeExcludes(), null, environment_lines, m_sRequestLine, sContentType, iContentLength, (long)m_iInboundSize, iReplyCode, m_Parent.getClientIPAddress(), m_Parent.getClientHostName(), m_Parent.m_pSystem.getSystemHostName(), m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), null); 
+			HTTPLogEntry stat = new HTTPLogEntry(m_Parent.getMimeExcludes(), null, environment_lines, m_sRequestLine, sContentType, lContentLength, (long)m_iInboundSize, iReplyCode, m_Parent.getClientIPAddress(), m_Parent.getClientHostName(), m_Parent.m_pSystem.getSystemHostName(), m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), null); 
 
 			m_Parent.writeTextStatLog(stat);
 
@@ -810,9 +810,9 @@ public class BOOSTERTransferWorker
 	/**
 	 * Read the http headers and return the content length
 	 */
-	private int readHeaders(ArrayList environment_lines, boolean bIsClientConnection) throws Exception
+	private long readHeaders(ArrayList environment_lines, boolean bIsClientConnection) throws Exception
 	{
-		int iContentLength=0;                 
+		long lContentLength=0;                 
 		//BufferedReader is=null;
 		String environment_line;
 		environment_lines.clear();  
@@ -934,19 +934,19 @@ public class BOOSTERTransferWorker
 		{
 			try
 			{ 
-				iContentLength = Integer.parseInt(puakma.util.Util.trimSpaces(sContentLength));                
+				lContentLength = Long.parseLong(puakma.util.Util.trimSpaces(sContentLength));                
 			}
 			catch(Exception ie)
 			{
 				m_Parent.m_pSystem.doError("Invalid Content-Length: ["+sContentLength + "]", m_Parent);
-				iContentLength = CONTENT_ERROR; //force connection to drop.
+				lContentLength = CONTENT_ERROR; //force connection to drop.
 			}
-			if(!bIsClientConnection && this.m_sMethod.equalsIgnoreCase("HEAD")) iContentLength = 0;
+			if(!bIsClientConnection && this.m_sMethod.equalsIgnoreCase("HEAD")) lContentLength = 0;
 		}   
 		else
 		{
 			if(bIsClientConnection) 
-				iContentLength = 0;
+				lContentLength = 0;
 			else
 			{
 				/*
@@ -961,14 +961,14 @@ public class BOOSTERTransferWorker
 					iContentLength = UNKNOWN_CONTENT_LENGTH;
 				 */
 				//BU 7.Aug.2012 Stupid IBM Domino/xpages stuff says http1.1 but supplies no content-length
-				if(iReplyCode==200) iContentLength = UNKNOWN_CONTENT_LENGTH;
+				if(iReplyCode==200) lContentLength = UNKNOWN_CONTENT_LENGTH;
 			}
 
 		}
 
 		if(m_Parent.isDebug())
-			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID + " Header read. content="+iContentLength+" bytes connection="+sCloseConnection, m_Parent);        
-		return iContentLength;
+			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID + " Header read. content="+lContentLength+" bytes connection="+sCloseConnection, m_Parent);        
+		return lContentLength;
 	}
 
 	/**
@@ -1329,7 +1329,7 @@ public class BOOSTERTransferWorker
 	 * Read the content chunk. Return the buffer if it is less than the specified size (for storage in cache), 
 	 * otherwise return null  
 	 */
-	private byte[] processContent(int iContentLength, int iReplyCode, boolean bIsClientConnection) throws Exception
+	private byte[] processContent(long lContentLength, int iReplyCode, boolean bIsClientConnection) throws Exception
 	{
 		//BufferedReader is=null;         
 		BufferedOutputStream os=null;
@@ -1344,23 +1344,23 @@ public class BOOSTERTransferWorker
 			//is = m_Serveris;
 			os = m_Clientos;
 		}
-		int iTotalRead=0;
-		int iTotalSent=0;
+		long lTotalRead=0;
+		long iTotalSent=0;
 		int iChunkSize=0; 
 		//if this is not a http 1.0 server replying with a 200 ok, bail out.
-		if(!bIsClientConnection && iContentLength<0 && (iReplyCode<200 || iReplyCode>=300)) return null;
-		if(bIsClientConnection && iContentLength<0 && m_sMethod!=null && m_sMethod.equalsIgnoreCase("GET")) return null; //BJU added
+		if(!bIsClientConnection && lContentLength<0 && (iReplyCode<200 || iReplyCode>=300)) return null;
+		if(bIsClientConnection && lContentLength<0 && m_sMethod!=null && m_sMethod.equalsIgnoreCase("GET")) return null; //BJU added
 
 		if(m_Parent.isDebug())
-			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Sending standard output. client="+bIsClientConnection + " len="+iContentLength, m_Parent);
-		if(iContentLength>0 && !bIsClientConnection && iContentLength<=MAX_CACHEABLEOBJECT_SIZE_BYTES) baos = new ByteArrayOutputStream(iContentLength);
+			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Sending standard output. client="+bIsClientConnection + " len="+lContentLength, m_Parent);
+		if(lContentLength>0 && !bIsClientConnection && lContentLength<=MAX_CACHEABLEOBJECT_SIZE_BYTES) baos = new ByteArrayOutputStream((int) lContentLength);
 		//System.out.println("totread="+iTotalRead + " len="+iContentLength + " client="+bIsClientConnection);
-		while(iTotalRead<iContentLength || (iContentLength<0 && !bIsClientConnection))
+		while(lTotalRead<lContentLength || (lContentLength<0 && !bIsClientConnection))
 		{
-			if(iContentLength<=0)
+			if(lContentLength<=0)
 				iChunkSize = 1024;
 			else
-				iChunkSize = iContentLength-iTotalRead;
+				iChunkSize = (int)(lContentLength-lTotalRead);
 			if(iChunkSize>MAXCHUNK) iChunkSize = MAXCHUNK;
 			char cBuf[] = new char[iChunkSize];
 			//System.out.print("Reading.... ("+iChunkSize+") ");
@@ -1368,7 +1368,7 @@ public class BOOSTERTransferWorker
 			int iRead = readInput(cBuf, bIsClientConnection);
 			//System.out.println("  read: "+iRead);
 			if(iRead<0) break; //BJU - should this stay in?? This is required for HTTP1.0 posts.
-			iTotalRead += iRead;
+			lTotalRead += iRead;
 			if(iRead>0)
 			{
 				byte buf[] = puakma.util.Util.makeByteArray(cBuf, iRead);  
@@ -1519,14 +1519,14 @@ public class BOOSTERTransferWorker
 	 * Get the content and gzip it. return the gzipped buffer so we can adjust 
 	 * the header
 	 */
-	private byte[] processGZIPContent(int iContentLength, int iReplyCode) throws Exception
+	private byte[] processGZIPContent(long lContentLength, int iReplyCode) throws Exception
 	{
 		BufferedReader is=null;         
 		is = m_Serveris;
 
-		if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Reading server content ready for gzip "+iContentLength, m_Parent);
+		if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Reading server content ready for gzip "+lContentLength, m_Parent);
 
-		return puakma.util.Util.getHTTPContent(is, iContentLength, -1);
+		return puakma.util.Util.getHTTPContent(is, lContentLength, -1);
 	}
 
 	/**

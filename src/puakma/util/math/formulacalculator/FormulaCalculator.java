@@ -1060,12 +1060,12 @@ public class FormulaCalculator
 	 */
 	private boolean foundIllegalDots(String sBlock) 
 	{
-		int iPos = sBlock.indexOf(".");
+		int iPos = sBlock.indexOf('.');
 		while(iPos>=0)
 		{
 			if(isInsideVariable(iPos, sBlock))
 			{
-				iPos = sBlock.indexOf(".", iPos+1);
+				iPos = sBlock.indexOf('.', iPos+1);
 				continue;
 			}
 			int iOperatorPos = getOperatorPos(sBlock, iPos+1);
@@ -1075,7 +1075,7 @@ public class FormulaCalculator
 				log("Found illegal decimal point at index["+iPos+"] of ["+sBlock+"]");
 				return true;
 			}
-			int iNextDotPos = sBlock.indexOf(".", iPos+1);
+			int iNextDotPos = sBlock.indexOf('.', iPos+1);
 			if(iNextDotPos>=0 && (iOperatorPos<0 || iOperatorPos>iNextDotPos))
 			{
 				log("Found second decimal point in he same number at index["+iNextDotPos+"] of ["+sBlock+"]");

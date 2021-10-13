@@ -67,14 +67,14 @@ import puakma.util.Util;
  * live as long as the server is running.
  * Code started: June 13, 2001 Brendon Upson
  * 
- * Note: v5.1.0 9.March.2015 Changed all StringBuilder to StringBuilder so minimum target is now Java 1.5
+ * Note: v5.1.0 9.March.2015 Changed all StringBuffer to StringBuilder so minimum target is now Java 1.5
  */
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.0.0";
-	private final int PUAKMA_BUILD=1035;
-	private final String PUAKMA_BUILD_DATE="23 May 2015"; 
+	private final String PUAKMA_VERSION="6.0.14";
+	private final int PUAKMA_BUILD=1063;
+	private final String PUAKMA_BUILD_DATE="13 Oct 2021"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 

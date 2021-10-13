@@ -45,7 +45,7 @@ public class HTMLControlChoice
 
 		StringBuilder sb = new StringBuilder(100);
 		sb.append("<option value=\"");
-		sb.append(m_sAliasText);
+		sb.append(getEscapedTextForValueAttribute(m_sAliasText));
 		sb.append("\"");
 		if(bSelected) sb.append(" selected=\"selected\"");
 		if(sAdditionalTagAttributes!=null) sb.append(" " + Util.trimSpaces(sAdditionalTagAttributes));
@@ -54,6 +54,37 @@ public class HTMLControlChoice
 		sb.append("</option>");
 		return sb.toString();
 	}
+	
+	public static String getEscapedTextForValueAttribute(String sValue)
+	{
+		if(sValue==null) return "";
+		
+		/*
+		 " becomes &quot;
+		 ' becomes &#39;
+		 */
+		String sWorkValue = sValue;
+		int iPos=sWorkValue.indexOf('\"');
+		while(iPos>=0)
+		{
+			String sStart = sWorkValue.substring(0, iPos);
+			String sEnd = sWorkValue.substring(iPos+1);
+			sWorkValue = sStart + "&quot;" + sEnd;
+			iPos=sWorkValue.indexOf('\"');
+		}
+		
+		iPos=sWorkValue.indexOf('\'');
+		while(iPos>=0)
+		{
+			String sStart = sWorkValue.substring(0, iPos);
+			String sEnd = sWorkValue.substring(iPos+1);
+			sWorkValue = sStart + "&#39;" + sEnd;
+			iPos=sWorkValue.indexOf('\'');
+		}
+		
+		return sWorkValue;
+	}
+	
 
 	/**
 	 * 

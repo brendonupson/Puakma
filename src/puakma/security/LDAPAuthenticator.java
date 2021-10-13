@@ -99,18 +99,21 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private String m_sBindMethod="simple";
 
-	private static String CONTEXT_FACTORY = "com.sun.jndi.ldap.LdapCtxFactory";
+	private static String CONTEXT_FACTORY = "com.sun.jndi.ldap.LdapCtxFactory";	
 	private String m_sLDAPHostConfigEntry;
 	private String m_sLDAPHosts[] = null;
 	private String m_sBindUserName=null;
 	private String m_sBindPassword=null;	
-	private String m_sGroupSearchString = "(objectClass=user)";
+	private String m_sGroupSearchString = "(objectClass=user)"; //"(&(objectClass=user)(distinguishedName=%s))"; 
 	private String m_sUserSearchString = "(&(objectclass=user)(|(cn=%s)(uid=%s)(sAMAccountName=%s)))";
 	private String m_sLDAPSearchBase = "";
-	private String m_sLDAPDNAttribute = null;//"distinguishedName" used by ActiveDirectory
+	private String m_sLDAPDNAttribute = "distinguishedName";//"distinguishedName" used by ActiveDirectory
 	private String m_sLDAPGroupMemberAttribute = "memberOf"; //"groupMembership" for NDS
 	private String m_sFirstNameSurname[] = new String[]{"givenName", "sn"};
 	private long m_lConnectTimeoutMS = -1;
+	private boolean m_bDebug = false;
+
+
 
 	public void init()
 	{          
@@ -155,7 +158,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		sTemp = SysCtx.getSystemProperty("LDAPConnectTimeoutSeconds");
 		if(sTemp!=null && Util.toInteger(sTemp)>0) m_lConnectTimeoutMS = Util.toInteger(sTemp)*1000;
 
-
+		m_bDebug = Util.toInteger(SysCtx.getSystemProperty("LDAPDebug"))==1;
 	}
 
 	/**
@@ -163,25 +166,58 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private void doStaticSetup()
 	{
-		m_sLDAPHostConfigEntry = "ldaps://ldap1";//,,, , ldap://localhoster,ldap://fred"; //636
+	/*	
+		 m_sLDAPHostConfigEntry = "ldaps://ldap1";		 
 		m_sBindMethod="simple";
 		m_sLDAPSearchBase="o=GoldingContractors";
 		m_sBindUserName="cn=puakma,ou=Puakma,o=goldingcontractors";
 		m_sBindPassword="Kiwi-666";
 		m_sLDAPGroupMemberAttribute="groupMembership";
-		//m_sLDAPSearchBase="DC=desqld,DC=internal";        
+		m_sLDAPDNAttribute = "";
+		 */
 
-		//m_sBindUserName="CN=Brendon Upson,OU=Administrators,DC=desqld,DC=internal";
-		//m_sBindPassword="";
+
+		m_sLDAPHostConfigEntry = "ldaps://ad.golding.com.au";
+		//m_sLDAPHostConfigEntry = "ldaps://10.100.104.8";
+		m_sBindMethod="simple";
+		m_sLDAPSearchBase="OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
+		m_sBindUserName="CN=SVC_PUAKMA,OU=Global Service Accounts,OU=Administration,DC=ad,DC=golding,DC=com,DC=au";
+		m_sBindPassword="m0z@rt7";
+		
 	}
 
 	public static void main(String sArgs[])
 	{
 		LDAPAuthenticator ldap = new LDAPAuthenticator();
 		ldap.doStaticSetup();
+		System.out.println("---------------------------"); 
+		System.out.println("Using: " + ldap.m_sLDAPHostConfigEntry);
 		ldap.setConnectTimeoutMS(2000);
-		LoginResult lr = ldap.loginUser("upsonb", "russia2000", "", "", "");
+		long lStart = System.currentTimeMillis();
+		LoginResult lr = ldap.loginUser("upsonb", "belmontnorth", "", "", "");
+
+
+
 		System.out.println(lr.toString()); 
+		System.out.println("Took: " + (System.currentTimeMillis()-lStart) + "ms");
+		System.out.println("---------------------------"); 
+
+		//String sUserName = "CN=upsonb,OU=Users,OU=MainOffice,OU=Gladstone,OU=QLD,OU=AU,O=GoldingContractors";
+		
+		String sUserName = "CN=Brendon Upson,OU=Users,OU=BNE,OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
+		String sGroupName = "IT Services - 50000151"; //"PuakmaGlobalAdmin";
+		lStart = System.currentTimeMillis();
+		boolean b = ldap.isUserInGroupPrivate(sUserName, sGroupName);
+		System.out.println(sUserName +" in group ["+sGroupName+"] = "+b);
+		System.out.println("Took: " + (System.currentTimeMillis()-lStart) + "ms");
+		
+		
+		lStart = System.currentTimeMillis();
+		String sGroup2 = "PuakmaGlobalAdmin";
+		boolean b2 = ldap.isUserInGroupPrivate(sUserName, sGroup2);
+		System.out.println(sUserName +" in group ["+sGroup2+"] = "+b2);
+		System.out.println("Took: " + (System.currentTimeMillis()-lStart) + "ms");
+
 		/*String sUserName = "CN=Brendon Upson/OU=Administrators/DC=desqld/DC=internal";//"CN=Brendon Upson/CN=Users/DC=wnc/DC=net/DC=au";
 		boolean b = ldap.isUserInGroupPrivate(sUserName, "SEC-AC-ADMIN-MOEINTERFACE-ADMINISTRATOR");
 		System.out.println("inGroup="+b);
@@ -223,6 +259,13 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			htJNDI.put(Context.SECURITY_PRINCIPAL, szUserName);
 			htJNDI.put(Context.SECURITY_CREDENTIALS, szPassword);
 		}
+		
+		
+		htJNDI.put("com.sun.jndi.ldap.connect.pool", "true");//Set connection pooling 
+		//System.out.println(i + ". Trying: " + sLDAPHosts[i]);
+		if(m_lConnectTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(m_lConnectTimeoutMS));		
+		htJNDI.put("com.sun.jndi.ldap.connect.pool.maxsize","30");
+		htJNDI.put("com.sun.jndi.ldap.connect.pool.timeout", "10000");//ms
 
 		return htJNDI;
 	}
@@ -263,7 +306,6 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private DirContext getInitialDirContext(String sUserName, String sPassword) throws NamingException
 	{
-
 		String sLDAPHosts[] = getLDAPHosts();
 
 		if(sLDAPHosts!=null)
@@ -271,8 +313,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			for(int i=0; i<sLDAPHosts.length; i++)
 			{
 				Hashtable htJNDI = setupJNDIEnvironment(sUserName, sPassword);
-				//System.out.println(i + ". Trying: " + sLDAPHosts[i]);
-				if(m_lConnectTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(m_lConnectTimeoutMS));
+
 				htJNDI.remove(Context.PROVIDER_URL);
 				htJNDI.remove(Context.SECURITY_PROTOCOL);
 				htJNDI.remove("java.naming.ldap.factory.socket");
@@ -291,13 +332,15 @@ public class LDAPAuthenticator extends pmaAuthenticator
 
 				try
 				{
-					DirContext ctx = new InitialDirContext(htJNDI);
+					InitialDirContext ctx = new InitialDirContext(htJNDI);
 					//System.out.println("OK: " + sLDAPHosts[i]);
 					return ctx;
 				}
 				catch(javax.naming.CommunicationException ce){System.err.println("ERR: " + ce.toString());}
 				catch(NamingException ne)
-				{ throw ne; }
+				{					
+					throw ne; 
+				}
 				System.err.println("LDAP host is unavailable [" + sLDAPHosts[i] +"]");
 			}//for
 		}
@@ -313,27 +356,34 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	{
 		LoginResult loginResult = new LoginResult();
 		boolean bFound = false;
-
-		//Hashtable htJNDI = setupJNDIEnvironment(m_sBindUserName, m_sBindPassword);
+		DirContext ctx = null;
 
 		try
 		{
-			DirContext ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);//new InitialDirContext(htJNDI);
+			long lStart = System.currentTimeMillis();			 
+
+			ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);
+			System.out.println("Bind for [" + m_sBindUserName + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
+
+			lStart = System.currentTimeMillis();
 			SearchControls constraints = new SearchControls();
 			constraints.setSearchScope(SearchControls.SUBTREE_SCOPE);
+			if(m_sLDAPDNAttribute!=null && m_sLDAPDNAttribute.length()>0) constraints.setReturningAttributes(new String[]{m_sLDAPDNAttribute});
 
 			String sSearchBase = m_sLDAPSearchBase;
 			String sLDAPSearchString = parseSearchString(m_sUserSearchString, szUserName); //makeSearchString(szUserName);
+			if(m_bDebug) SysCtx.doDebug(0, "UserSearchString=" + m_sUserSearchString, this);
 			NamingEnumeration results = ctx.search(sSearchBase, sLDAPSearchString, constraints);            
 			if(results!=null && results.hasMore())
 			{
 				bFound = true;
+				System.out.println("Search for [" + m_sUserSearchString + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
 				SearchResult sr = (SearchResult)results.next();
 				boolean bMoreResults = false;
 				try{ bMoreResults = results.hasMore(); }catch(NamingException ne){}
 				if(bMoreResults)                
 					loginResult.ReturnCode = LoginResult.LOGIN_RESULT_TOO_MANY_MATCHES;                                    
-				else                                                
+				else   				
 					return bindUser(sr, szPassword, loginResult);                
 			}
 
@@ -349,6 +399,13 @@ public class LDAPAuthenticator extends pmaAuthenticator
 				SysCtx.doError("Error logging in LDAP user '%s'", new String[]{e.toString()}, this);            
 			else
 				e.printStackTrace();
+		}
+		finally
+		{
+			try {
+				if(ctx!=null)				
+					ctx.close();
+			} catch (Exception e) {}
 		}
 
 		return loginResult;
@@ -386,12 +443,14 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			}
 			else
 			{
-				if(m_sLDAPDNAttribute!=null) System.err.println("LDAPDNAttribute=" + m_sLDAPDNAttribute + " does not exist in this schema.");
+				if(m_sLDAPDNAttribute!=null && m_sLDAPDNAttribute.length()>0) System.err.println("LDAPDNAttribute=" + m_sLDAPDNAttribute + " does not exist in this schema.");
 				sDN = sr.getName() + "," + m_sLDAPSearchBase;
 			}
 
-			//Hashtable htJNDI = setupJNDIEnvironment(sDN, sPassword);
-			getInitialDirContext(sDN, sPassword);//new InitialDirContext(htJNDI);
+			long lStart = System.currentTimeMillis();			 
+			DirContext ctx = getInitialDirContext(sDN, sPassword);
+			ctx.close();
+			System.out.println("Bind for [" + sDN + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
 
 			//if we get here, then the password etc must be OK
 			loginResult.ReturnCode = LoginResult.LOGIN_RESULT_SUCCESS;
@@ -462,27 +521,30 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		//don't bother checking anonymous users group memberships in LDAP
 		if(sUserName.equalsIgnoreCase("CN="+pmaSession.ANONYMOUS_USER) || sUserName.equalsIgnoreCase(pmaSession.ANONYMOUS_USER)) return false;
 
+		DirContext ctx = null;
+		if(m_bDebug) SysCtx.doDebug(0, "isUserInGroupPrivate(\""+sUserName + "\",\"" + sGroup + "\") attr:" + m_sLDAPGroupMemberAttribute, this);
 		X500Name nmUser = new X500Name(sUserName);
 		nmUser.setSeperator(",");
 		X500Name nmFindGroup = new X500Name(sGroup);
 		nmFindGroup.setSeperator(",");
 		try
 		{
-			//Hashtable htJNDI = setupJNDIEnvironment(m_sBindUserName, m_sBindPassword);
-			DirContext ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);//new InitialDirContext(htJNDI);            
+			ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);            
 			SearchControls constraints = new SearchControls();
 			//Specify the search scope
 			constraints.setSearchScope(SearchControls.OBJECT_SCOPE);            
 			constraints.setReturningAttributes(new String[]{m_sLDAPGroupMemberAttribute});//"groupMembership"});
 
 			String sSearchBase = nmUser.getCanonicalName();
-			String sLDAPSearchString = m_sGroupSearchString;            
+			//String sLDAPSearchString = m_sGroupSearchString;
+			String sLDAPSearchString = parseSearchString(m_sGroupSearchString, sSearchBase);
+			System.out.println(sLDAPSearchString);
 			NamingEnumeration results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
 			if(results!=null && results.hasMore())
 			{
 
 				SearchResult sr = (SearchResult)results.next();                
-				//System.out.println("Found="+sr.getName() + "]");
+				System.out.println("Found=["+sr.getName() + "]");
 
 				//System.out.println("looking for=["+nmFindGroup.getCanonicalName()+"]["+nmFindGroup.getCommonName()+"]");
 				Attributes attrs = sr.getAttributes();                    
@@ -493,7 +555,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 					{
 						String sGroupMembership = (String)aGroups.get(i);
 						X500Name nmGroup = new X500Name(sGroupMembership, ",");
-						//System.out.println("found      =["+nmGroup.getCanonicalName()+"]["+nmGroup.getCommonName()+"]");                        
+						if(m_bDebug) SysCtx.doDebug(0, "found=["+nmGroup.getCanonicalName()+"]["+nmGroup.getCommonName()+"]", this);                        
 						if(nmGroup.getCommonName().equalsIgnoreCase(nmFindGroup.getCommonName())) return true;                    
 					}//for
 				}
@@ -506,6 +568,13 @@ public class LDAPAuthenticator extends pmaAuthenticator
 				SysCtx.doError("Error finding user's group memberships '%s'", new String[]{e.toString()}, this);            
 			else
 				e.printStackTrace();
+		}
+		finally
+		{
+			try {
+				if(ctx!=null)				
+					ctx.close();
+			} catch (Exception e) {}
 		}
 
 		return false;
@@ -520,12 +589,13 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		LoginResult loginResult = new LoginResult();
 		if(sCanonicalName==null || sCanonicalName.length()==0) return loginResult;
 
+		DirContext ctx = null;
 		X500Name nmUser = new X500Name(sCanonicalName);
 		nmUser.setSeperator(",");        
 		try
 		{
 			//Hashtable htJNDI = setupJNDIEnvironment(m_sBindUserName, m_sBindPassword);
-			DirContext ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);//new InitialDirContext(htJNDI);            
+			ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);//new InitialDirContext(htJNDI);            
 			SearchControls constraints = new SearchControls();
 			//Specify the search scope
 			constraints.setSearchScope(SearchControls.OBJECT_SCOPE);            
@@ -563,6 +633,13 @@ public class LDAPAuthenticator extends pmaAuthenticator
 				SysCtx.doError("Error populating session '%s'", new String[]{e.toString()}, this);            
 			else
 				e.printStackTrace();
+		}
+		finally
+		{
+			try {
+				if(ctx!=null)				
+					ctx.close();
+			} catch (Exception e) {}
 		}
 		return loginResult;
 	}

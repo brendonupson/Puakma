@@ -25,6 +25,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.Hashtable;
 
@@ -32,6 +33,9 @@ import puakma.addin.AddInStatistic;
 import puakma.addin.pmaAddIn;
 import puakma.addin.pmaAddInStatusLine;
 import puakma.error.ErrorDetect;
+import puakma.system.Document;
+import puakma.system.SessionContext;
+import puakma.system.SystemContext;
 import puakma.system.pmaSystem;
 import puakma.system.pmaThread;
 import puakma.system.pmaThreadInterface;
@@ -44,6 +48,8 @@ import puakma.util.Util;
  */
 public class MAILER extends pmaAddIn implements ErrorDetect
 {
+	private static final int DEFAULT_PORT = 25;
+
 	private pmaThreadPoolManager m_tpm;
 	private String szMailDomain="";
 	private int max_pooled_threads = 0;
@@ -54,15 +60,24 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 	private int mail_retry_minutes = 7;
 	private int mail_retry_count = 10;
 	private int mail_socket_timeout_seconds = 60;
-	private int iSmartHostPort=25;
+	private int iSmartHostPort=DEFAULT_PORT;
+	private boolean bSmartHostPortSecure = false;
 	private String szSmartHost;
 	private String m_HostName;
 	private Hashtable htMessageQueue = new Hashtable();
 	private pmaAddInStatusLine pStatus;
 	private boolean m_bRunning = true;
+	private long m_lTotalMailsSent = 0;
+	private long m_lTotalMailErrors = 0;
 
 	public static final String STATISTIC_KEY_MAILSPERHOUR = "mailer.mailsperhour";
-
+	public static final String STATISTIC_KEY_MAILSTOTAL = "mailer.mailstotal";
+	public static final String STATISTIC_KEY_MAILSTOTALSENDERRORS = "mailer.mailstotalerrors";
+	public static final String STATISTIC_KEY_MAILSTOTALREQUEUED = "mailer.mailstotalrequeued";
+	public static final String STATISTIC_KEY_MAILSQUEUELENGTH = "mailer.mailsqueuelength";
+	public static final String STATISTIC_KEY_MAILSDEADCOUNT = "mailer.mailsdeadcount";
+	
+	
 	/**
 	 * This method is called by the pmaServer object
 	 */
@@ -76,6 +91,11 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		m_pSystem.doInformation("MAILER.Startup", this);
 
 		createStatistic(STATISTIC_KEY_MAILSPERHOUR, AddInStatistic.STAT_CAPTURE_PER_HOUR, -1, true);
+		createStatistic(STATISTIC_KEY_MAILSTOTAL, AddInStatistic.STAT_CAPTURE_ONCE, -1, true);
+		createStatistic(STATISTIC_KEY_MAILSTOTALSENDERRORS, AddInStatistic.STAT_CAPTURE_ONCE, -1, true);
+		createStatistic(STATISTIC_KEY_MAILSTOTALREQUEUED, AddInStatistic.STAT_CAPTURE_ONCE, -1, true);
+		createStatistic(STATISTIC_KEY_MAILSQUEUELENGTH, AddInStatistic.STAT_CAPTURE_ONCE, -1, true);
+		createStatistic(STATISTIC_KEY_MAILSDEADCOUNT, AddInStatistic.STAT_CAPTURE_ONCE, -1, true);
 
 		// startup the add an extra thread for the mail cleaner...
 		szMailDomain = m_pSystem.getSystemProperty("MAILERMailDomain");
@@ -85,7 +105,7 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 			m_pSystem.doInformation("MAILER.Shutdown", this);
 			return;
 		}
-//FIXME int parsing?
+		//FIXME int parsing?
 		max_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("MAILERTransferThreads")) + 1;
 		min_pooled_threads = max_pooled_threads;
 		thread_pool_timeout = Integer.parseInt(m_pSystem.getSystemProperty("MAILERThreadCreateTimeout"));
@@ -107,8 +127,28 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 			szSmartHost = null;
 		else
 		{
-			iSmartHostPort = Integer.parseInt(m_pSystem.getSystemProperty("MAILERSmartHostPort"));
+			String sSmartHost = Util.trimSpaces(m_pSystem.getSystemProperty("MAILERSmartHostPort"));
+			if(sSmartHost!=null && sSmartHost.length()>0)
+			{
+				bSmartHostPortSecure = false;
+				if(sSmartHost.toLowerCase().endsWith("ssl")) 
+				{
+					bSmartHostPortSecure = true;
+					sSmartHost = sSmartHost.substring(0, sSmartHost.length()-3);
+				}
+				iSmartHostPort = (int)Util.toInteger(sSmartHost);	
+				if(iSmartHostPort<1)
+				{
+					m_pSystem.doError("MAILER.SmartHostError", new String[]{szSmartHost, String.valueOf(iSmartHostPort)}, this);
+					iSmartHostPort = DEFAULT_PORT;
+				}
+				else
+					m_pSystem.doInformation("MAILER.SmartHost", new String[]{szSmartHost, String.valueOf(iSmartHostPort), bSmartHostPortSecure?"(secure)":""}, this);
+			}
+			/*
+			iSmartHostPort = Integer.parseInt(m_pSystem.getSystemProperty("MAILERSmartHostPort"));			
 			m_pSystem.doInformation("MAILER.SmartHost", new String[]{szSmartHost, String.valueOf(iSmartHostPort)}, this);
+			 */
 		}
 
 		MailCleaner mc = null;
@@ -148,12 +188,13 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 					{						
 						if(m_bRunning) sleep(1000*mailer_poll_seconds);						
 					} catch(Exception e){ }
-				}
-			}
+				}				
+			}//if hasThreads
 			else //there are no available threads, so wait 1 seconds
 				try{sleep(1000);} catch(Exception w){ }
 
-				//System.out.println("-END LOOP-");
+			updateMailQueueStats();
+			//System.out.println("-END LOOP-");
 		}//while
 		m_bRunning = false;
 		m_tpm.requestQuit();
@@ -162,6 +203,46 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		removeStatusLine(pStatus);
 	}//pmaAddInMain()
 
+	private void updateMailQueueStats()
+	{
+		Connection cx = null;
+		Statement stmt = null;
+		ResultSet rs = null;
+		try
+		{
+			cx = m_pSystem.getSystemConnection();			
+			stmt = cx.createStatement();
+			rs = stmt.executeQuery("SELECT COUNT(*) FROM MAILHEADER WHERE MessageStatus='D'");
+			if(rs.next())
+			{
+				long lDead = rs.getLong(1);
+				this.setStatistic(MAILER.STATISTIC_KEY_MAILSDEADCOUNT, lDead);
+			}
+			Util.closeJDBC(rs);
+			rs = stmt.executeQuery("SELECT COUNT(*) FROM MAILHEADER WHERE MessageStatus='P'");
+			if(rs.next())
+			{
+				long lQueue = rs.getLong(1);
+				this.setStatistic(MAILER.STATISTIC_KEY_MAILSQUEUELENGTH, lQueue);
+			}			
+		}
+		catch (Exception sqle)
+		{
+			m_pSystem.doError("updateMailQueueStats(): ", new String[]{sqle.toString()}, this);	       
+		}
+		finally
+		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
+			m_pSystem.releaseSystemConnection(cx);
+		}
+	}
+	
+	
+	public void incrementStatistic(String stat)
+	{
+		this.incrementStatistic(stat, 1);
+	}
 
 	/**
 	 * Find out who we should be saying helo as - called by transfer thread
@@ -239,6 +320,11 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 	public int getSmartHostPort()
 	{
 		return iSmartHostPort;
+	}
+
+	public boolean isSmartHostPortSecure()
+	{
+		return bSmartHostPortSecure;
 	}
 
 
@@ -333,10 +419,11 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		if(sCommand.equalsIgnoreCase("?") || sCommand.equalsIgnoreCase("help"))
 		{
 			return "->status\r\n" +        
-			"->queue clear\r\n" + 			
-			"->queue clear all\r\n" +
-			"->resend dead\r\n" +
-			"->stats [statistickey]\r\n";
+					"->queue clear\r\n" + 			
+					"->queue clear all\r\n" +
+					"->resend dead\r\n" +
+					"->test [from_email_address] [to_email_address]\r\n" +
+					"->stats [statistickey]\r\n";
 		}
 
 		if(sCommand.toLowerCase().equals("status"))
@@ -357,9 +444,38 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		{
 			return resendDeadMails();
 		}
+		
+		if(sCommand.toLowerCase().startsWith("test "))
+		{
+			//System.out.println("[" + sCommand + "]");
+			ArrayList cmd = Util.splitString(sCommand, ' ');
+			if(cmd.size()!=3) return "Invalid parameters. Specify from and to address";
+			
+			String sFromAddress = "";
+			String sToAddress = "";
+			
+			if(cmd.size()>1) sFromAddress = (String) cmd.get(1);
+			if(cmd.size()>2) sToAddress = (String) cmd.get(2);
+			return testMailSend(sFromAddress, sToAddress);
+		}
 
 
 		return "";
+	}
+
+
+	private String testMailSend(String sFromAddress, String sToAddress) 
+	{
+		// TODO Auto-generated method stub
+		Document doc = new Document(this.m_pSystem, this.m_pSystem.createSystemSession("MAILER TEST"));
+		doc.replaceItem("From", sFromAddress);
+		doc.replaceItem("SendTo", sToAddress);
+		doc.replaceItem("Subject", "Email send test from " + this.m_HostName + " " + Util.formatDate(new Date(), "yyyy-MM-dd HH:mm:ss"));
+		doc.replaceItem("Body", "This is a test message");
+		//this.m_pSystem.
+		if(doc.send()) return "Test message successfully queued for delivery";
+		
+		return "Test message could not be sent";
 	}
 
 

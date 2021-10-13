@@ -51,7 +51,6 @@ import java.util.Date;
 import java.util.Hashtable;
 import java.util.Locale;
 import java.util.TimeZone;
-import java.util.Vector;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -458,11 +457,12 @@ public class Util
 		}*/
 		
 		//String sTestDate = "Fri, 25 Oct 2013 09:19:01 GMT";
-		String sTestDate = " Tue, 26 Nov 2013 23:59:59 GMT";
+		/*String sTestDate = " Tue, 26 Nov 2013 23:59:59 GMT";
 		long lExpiryDate = puakma.util.Util.getDateMSFromGMTString(sTestDate);
 		Date dtTest = new Date();
 		dtTest.setTime(lExpiryDate);
 		System.out.println("lExpiryDate="+lExpiryDate + " = " + sTestDate + " = " + dtTest);
+		*/
 		
 		/*
 		 * long lNow = System.currentTimeMillis();
@@ -471,6 +471,11 @@ public class Util
 				if(lExpiryDate<lNow) 
 				{
 		 */
+		
+		String sDesc = " - Terry Smith";
+		char cTrim[] = new char[]{' ', '-', ',', '.', ':', '#', ';', '/', '~',
+				'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+		System.out.println(sDesc + "=" +  Util.trimChar(sDesc, cTrim));
 		
 	}
 
@@ -1324,16 +1329,16 @@ public class Util
 	 * set iContentLength to -1 if unknown or chunked/http 1.0
 	 *@return null if the iMaxSize was exceeded, set iMaxSize to -1 for no limit
 	 */
-	public static byte[] getHTTPContent(BufferedReader br, int iContentLength, int iMaxSize) throws Exception
+	public static byte[] getHTTPContent(BufferedReader br, long lContentLength, int iMaxSize) throws Exception
 	{
 		//BufferedReader br=new BufferedReader(new InputStreamReader(is, "ISO-8859-1"));         
 		ByteArrayOutputStream baos=new ByteArrayOutputStream();
 
-		if(iContentLength>=0)
+		if(lContentLength>=0)
 		{
 			int iTotalRead=0;
 			char cBuf[] = new char[1024];
-			while(iTotalRead<iContentLength)
+			while(iTotalRead<lContentLength)
 			{
 				int iRead = br.read(cBuf);
 				iTotalRead += iRead;                

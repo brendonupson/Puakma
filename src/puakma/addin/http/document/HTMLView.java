@@ -576,6 +576,116 @@ public class HTMLView
 		if(iPos>0) sSortField = sSortField.substring(0, iPos);
 		ResultSet rs = null;
 		Statement stmt = null;
+		TableManager t = null;
+		//System.out.println("sort="+sSortField);
+		try
+		{
+			cx = m_pSession.getDataConnection(m_sConnName);
+			stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			rs = stmt.executeQuery(m_sSQL);
+			while(rs.next())
+			{
+				String sVal = rs.getString(sSortField);
+				if(sVal!=null && sVal.length()>0)
+				{
+					sVal = sVal.toUpperCase();
+					if(sVal.startsWith(sJumpTo) || lOutput>0) //output the row, if it matches or if we've already started output
+					{
+						if(m_objCallback!=null)
+						{
+							if(t==null) t = new TableManager(m_pSession, m_sConnName, "");
+							t.clearDocument();
+							t.populateDocumentFromResultSet(rs);
+							if(m_objCallback.htmlViewCallback(t)) //if returns false should not appear in the result output, counting is therefore tricky and inefficient
+							{
+
+								sb.append("<row>");
+								sb.append(t.getXML());
+								sb.append("</row>");									
+								lOutput++;
+							}
+						}
+						else
+						{
+							sb.append("<row>");
+							sb.append(TableManager.getColumnXML(rs, false, m_pSession.getSessionContext()));
+							sb.append("</row>");
+							//System.out.println(sVal);
+							lOutput++;
+						}
+					}
+					else
+					{
+						if(lOutput==0) //check we haven't gone past, eg we're looking for J and we've hit M
+						{
+							char cVal = sVal.charAt(0);
+							char cJump = sJumpTo.charAt(0);
+							if(cVal>cJump) break;
+						}
+						lStartRow++;
+					}
+				}
+				if(lOutput>=lMaxRows) break;
+			}            
+		}
+		catch(Exception e)
+		{
+			m_pSession.getSystemContext().doError(e.toString(), m_pSession);
+			puakma.util.Util.logStackTrace(e, m_pSession.getSystemContext(), this, 999);
+		}
+		finally
+		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
+			m_pSession.releaseDataConnection(cx);
+		}
+
+		TableManager.addTrailerXML(sb);
+		StringBuilder sbResult=null;
+		if(lOutput==0) //no records were found
+		{
+			//System.out.println("lStartRow="+lStartRow+", maxperview="+m_lMaxRowsPerView);            
+			long lBegin = lStartRow - m_lMaxRowsPerView;
+			if(lBegin<0) lBegin=0;
+			//System.out.println("lBegin="+lBegin+" max="+lMaxRows);
+			sbResult = doList(lBegin, lMaxRows);
+			m_sStart = String.valueOf(lBegin);
+		}
+		else
+		{
+			m_sStart = String.valueOf(lStartRow);        
+			sbResult = m_pSession.xmlTransform(sb, m_sXSLStyleSheet);
+		}
+
+		//System.out.println(sb.toString());
+		//System.out.println(m_sSQL);
+		return sbResult; 
+	}
+
+	/**
+	 * 
+	 * @param sJumpTo
+	 * @param lMaxRows
+	 * @return
+	 * @deprecated
+	 */
+	private StringBuilder zz_doJumpList(String sJumpTo, long lMaxRows)
+	{
+		long lStartRow=0;
+		sJumpTo = sJumpTo.toUpperCase();
+		StringBuilder sb = TableManager.getHeaderXML(m_tm.getDefaultProtocol(), m_tm.getDefaultHost(), m_doc.rPath.getPathToApplication());
+		Connection cx = null;
+		long lOutput=0;
+		int iPos = m_sSQL.toUpperCase().indexOf(SQL_ORDER_BY);
+		String sSortField = "";
+		if(iPos>0) sSortField = m_sSQL.substring(iPos+SQL_ORDER_BY.length());
+		//now sSortField will be terminated with a " " or ","
+		iPos = sSortField.indexOf(' ');
+		if(iPos>0) sSortField = sSortField.substring(0, iPos);
+		iPos = sSortField.indexOf(',');
+		if(iPos>0) sSortField = sSortField.substring(0, iPos);
+		ResultSet rs = null;
+		Statement stmt = null;
 		//System.out.println("sort="+sSortField);
 		try
 		{

@@ -147,37 +147,35 @@ public class AgendaItem
 	 */
 	private void parseTimes()
 	{
-		String szTemp = getOptionElement("StartTime");
-		if(szTemp != null)
+		String sTemp = getOptionElement("StartTime");
+		if(sTemp != null)
 		{
-			int iPos = szTemp.indexOf(":");
+			int iPos = sTemp.indexOf(':');
 			if(iPos>0) //well it shouldnt start with a colon!
 			{
-				String szStartHour = szTemp.substring(0, iPos);
-				String szStartMinute = szTemp.substring(iPos+1, szTemp.length());
-				try
-				{
-					m_iStartHour = Integer.parseInt(szStartHour);
-					m_iStartMinute = Integer.parseInt(szStartMinute);
-				}
-				catch(Exception starte){}
+				String sStartHour = sTemp.substring(0, iPos);
+				String sStartMinute = sTemp.substring(iPos+1, sTemp.length());
+
+				m_iStartHour = (int)Util.toInteger(sStartHour);
+				if(sStartMinute.equals("*")) //allow eg "23:*" to run at a random time after the hour
+					m_iStartMinute = (int)(Math.random() * 60);
+				else
+					m_iStartMinute = (int)Util.toInteger(sStartMinute);
 			}
 		}
 
-		szTemp = getOptionElement("FinishTime");
-		if(szTemp != null)
+		sTemp = getOptionElement("FinishTime");
+		if(sTemp != null)
 		{
-			int iPos = szTemp.indexOf(":");
+			int iPos = sTemp.indexOf(':');
 			if(iPos>0) //well it shouldnt start with a colon!
 			{
-				String szFinishHour = szTemp.substring(0, iPos);
-				String szFinishMinute = szTemp.substring(iPos+1, szTemp.length());
-				try
-				{
-					m_iFinishHour = Integer.parseInt(szFinishHour);
-					m_iFinishMinute = Integer.parseInt(szFinishMinute);
-				}
-				catch(Exception starte){}
+				String sFinishHour = sTemp.substring(0, iPos);
+				String sFinishMinute = sTemp.substring(iPos+1, sTemp.length());
+
+				m_iFinishHour = (int)Util.toInteger(sFinishHour);
+				m_iFinishMinute = (int)Util.toInteger(sFinishMinute);
+
 			}
 		}
 	}
@@ -755,7 +753,7 @@ public class AgendaItem
 	{
 		return m_rPath.getPathToDesign();
 	}
-	
+
 	/**
 	 * Determines if the path passed matches the path for this scheduled action. 
 	 * eg if "/grp/app.pma/Action?Param&q=1&q=2" is passed, it will match on "/grp/app.pma/action"
@@ -766,7 +764,7 @@ public class AgendaItem
 	{
 		//System.out.println("TEST: " + sPath + " = " + getPath());
 		if(sPath==null) return false;
-		
+
 		String sLowPath = getPath().toLowerCase();
 		if(sPath.toLowerCase().startsWith(sLowPath)) return true;
 		return false;

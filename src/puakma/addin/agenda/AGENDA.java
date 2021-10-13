@@ -129,14 +129,22 @@ public class AGENDA extends pmaAddIn
 		{
 			m_pStatus.setStatus("Running " + m_vRunningActions.size() + "/" + m_iMaxConcurrentActions + " actions");
 
-			//check what needs to be run, add to waitlist
-			doWaitList();
-			//clean dead threads - if outOfMemory exceptions etc
-			cleanDeadThreads();
-			//move things from the waitlist until we have enough concurrent actions running
-			runFromWaitList();
-			//refresh action list?
-			if(addInSecondsHaveElapsed(m_iRefreshIntervalMinutes*60)) refreshActionList(false);
+			try
+			{
+				//check what needs to be run, add to waitlist
+				doWaitList();
+				//clean dead threads - if outOfMemory exceptions etc
+				cleanDeadThreads();
+				//move things from the waitlist until we have enough concurrent actions running
+				runFromWaitList();
+				//refresh action list?
+				if(addInSecondsHaveElapsed(m_iRefreshIntervalMinutes*60)) refreshActionList(false);
+			}
+			catch(Exception e)
+			{
+				m_pSystem.doError(e.toString(), this);
+				e.printStackTrace();
+			}
 			//double dblSleep = (m_iQueuePollIntervalSeconds*0.98)*1000; 
 			try{Thread.sleep(998);}catch(Exception e){} //more than once a second!
 		}//end while
@@ -267,25 +275,25 @@ public class AGENDA extends pmaAddIn
 		if(sCommand.equalsIgnoreCase("?") || sCommand.equalsIgnoreCase("help"))
 		{
 			return "->schedule\r\n" +
-			"->status\r\n" +
-			"->dbpool status\r\n" +
-			"->refresh\r\n" +
-			"->run /group/app.pma/action\r\n" +
-			"->stats [statistickey]\r\n" +
-			"->waitlist status\r\n" +
-			"->waitlist clear\r\n";
+					"->status\r\n" +
+					"->dbpool status\r\n" +
+					"->refresh\r\n" +
+					"->run /group/app.pma/action\r\n" +
+					"->stats [statistickey]\r\n" +
+					"->waitlist status\r\n" +
+					"->waitlist clear\r\n";
 		}
 
 		if(sCommand.toLowerCase().equals("status"))
 		{
 			return "-> AGENDA status:" + "\r\n" +
-			"Actions running: " + m_vRunningActions.size() + "\r\n" +
-			"Actions waitlisted: " + m_vWaitList.size() + "\r\n" +
-			"Actions scheduled: " + m_vActionList.size() + "\r\n" +
-			"Dead actions: " + m_iErrCount + "\r\n" +
-			"Max concurrent Actions: " + m_iMaxConcurrentActions + "\r\n" +
-			"Refresh action list every " + m_iRefreshIntervalMinutes + " minutes\r\n" +
-			"Poll queue every " + m_iQueuePollIntervalSeconds + " seconds\r\n";
+					"Actions running: " + m_vRunningActions.size() + "\r\n" +
+					"Actions waitlisted: " + m_vWaitList.size() + "\r\n" +
+					"Actions scheduled: " + m_vActionList.size() + "\r\n" +
+					"Dead actions: " + m_iErrCount + "\r\n" +
+					"Max concurrent Actions: " + m_iMaxConcurrentActions + "\r\n" +
+					"Refresh action list every " + m_iRefreshIntervalMinutes + " minutes\r\n" +
+					"Poll queue every " + m_iQueuePollIntervalSeconds + " seconds\r\n";
 		}
 
 		if(sCommand.toLowerCase().equals("schedule"))
@@ -365,7 +373,7 @@ public class AGENDA extends pmaAddIn
 
 		if(sCommand.toLowerCase().startsWith("run "))
 		{
-			int iPos = sCommand.indexOf(" ");
+			int iPos = sCommand.indexOf(' ');
 			if(iPos>0)
 			{
 				String szPath = sCommand.substring(iPos+1, sCommand.length());

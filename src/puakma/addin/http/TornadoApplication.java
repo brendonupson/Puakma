@@ -1194,7 +1194,7 @@ public class TornadoApplication implements ErrorDetect
 	 * @return
 	 * @throws Exception
 	 */
-	private Connection getDataConnection(String sDriverClass, String sDBURL, String sDBURLOptions, String sDBName, String sDBUserName, String sDBPassword) throws Exception
+	public Connection getDataConnection(String sDriverClass, String sDBURL, String sDBURLOptions, String sDBName, String sDBUserName, String sDBPassword) throws Exception
 	{
 		if(m_DBPoolMgr==null) return null;
 		Connection cx=null;

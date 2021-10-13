@@ -21,13 +21,9 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 
 import puakma.addin.pmaAddIn;

@@ -99,16 +99,16 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 			if(rs.next())
 			{
 				//hash password
-				String szEncryptedPW = Util.encryptString(sPassword);
-				String szStoredPassword = Util.trimSpaces(rs.getString("Password"));
+				String sEncryptedPW = Util.encryptString(sPassword);
+				String sStoredPassword = Util.trimSpaces(rs.getString("Password"));
 				//System.out.println("pw=["+szPassword+"]");
 				//System.out.println("encryp=["+szEncryptedPW+"]");
 				//System.out.println("stored=["+szStoredPassword+"]");
 				//we use startswith because the pw may be truncated in the DB
-				if(szEncryptedPW.startsWith(szStoredPassword)) //if password matches
+				if(sEncryptedPW.startsWith(sStoredPassword)) //if password matches
 				{
-					String szLoginFlag = rs.getString("LoginFlag");
-					if(szLoginFlag!=null && szLoginFlag.toUpperCase().indexOf("D")>=0)
+					String sLoginFlag = rs.getString("LoginFlag");
+					if(sLoginFlag!=null && sLoginFlag.toUpperCase().indexOf('D')>=0)
 					{
 						SysCtx.doError("pmaDefaultAuthenticator.LoginAccountDisabled", new String[]{sLoginName}, this);
 						loginResult.ReturnCode=LoginResult.LOGIN_RESULT_ACCOUNT_DISABLED;

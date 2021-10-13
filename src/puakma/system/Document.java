@@ -174,14 +174,14 @@ public class Document implements ErrorDetect,Cloneable
 	 * For parsing html POST which will have the format
 	 * "Field=Value&F2=V2&f3=v3"
 	 */
-	public Document(SystemContext paramSystem, SessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, int iContentLength, String sCharSet)
+	public Document(SystemContext paramSystem, SessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, long lContentLength, String sCharSet)
 	{
 		pSystem = paramSystem;
 		pSession = paramSession;
 		pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "new Document() &", pSystem);
 
-		if(szContentType.equalsIgnoreCase(Document.CONTENT_PLAIN)) readStandardPageSubmit(szPageName, is, szContentType, iContentLength, sCharSet);
-		else readIntoFile(szPageName, is, szContentType, iContentLength);
+		if(szContentType.equalsIgnoreCase(Document.CONTENT_PLAIN)) readStandardPageSubmit(szPageName, is, szContentType, lContentLength, sCharSet);
+		else readIntoFile(szPageName, is, szContentType, lContentLength);
 	}
 
 	/**
@@ -190,9 +190,9 @@ public class Document implements ErrorDetect,Cloneable
 	 * @param szPageName
 	 * @param is
 	 * @param szContentType
-	 * @param iContentLength
+	 * @param lContentLength
 	 */
-	private void readIntoFile(String szPageName, ByteStreamReader is, String szContentType, int iContentLength)
+	private void readIntoFile(String szPageName, ByteStreamReader is, String szContentType, long lContentLength)
 	{    
 		char charBuf[]=new char[UPLOAD_CHUNK_SIZE];
 		File fData=null;
@@ -201,7 +201,7 @@ public class Document implements ErrorDetect,Cloneable
 
 		try
 		{
-			if(iContentLength>524288) //0.5MB - may need to tweak later
+			if(lContentLength>524288) //0.5MB - may need to tweak later
 			{
 				fData = File.createTempFile(String.valueOf(pSystem.getSystemUniqueNumber())+"_doc_", null, pSystem.getTempDir());
 				fout = (FileOutputStream )(new FileOutputStream(fData));
@@ -209,13 +209,14 @@ public class Document implements ErrorDetect,Cloneable
 			else //short request, so cache it in memory
 			{
 				bIsMem=true;
-				fout = new ByteArrayOutputStream(iContentLength);
+				fout = new ByteArrayOutputStream((int)lContentLength);
 			}
-			int iRead=0, iTotalRead=0;
-			while(iTotalRead<iContentLength)
+			long lTotalRead = 0;
+			int iRead=0;
+			while(lTotalRead<lContentLength)
 			{
 				iRead = is.read(charBuf);
-				iTotalRead += iRead;
+				lTotalRead += iRead;
 				byte buf[]=new byte[iRead];
 				for(int p=0; p<iRead; p++) buf[p] = (byte)(charBuf[p]);        
 				fout.write(buf);        
@@ -241,21 +242,22 @@ public class Document implements ErrorDetect,Cloneable
 	 * @param szPageName
 	 * @param is
 	 * @param szContentType
-	 * @param iContentLength
+	 * @param lContentLength
 	 */
-	private void readStandardPageSubmit(String szPageName, ByteStreamReader is, String szContentType, int iContentLength, String sCharset)
+	private void readStandardPageSubmit(String szPageName, ByteStreamReader is, String szContentType, long lContentLength, String sCharset)
 	{
-		byte charBuf[]=new byte[iContentLength];
+		byte charBuf[]=new byte[(int)lContentLength];
 		//byte bufToProcess[]=null;
 		//StringBuilder sbData = new StringBuilder(iContentLength);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream(iContentLength);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream((int)lContentLength);
 		try
 		{      
-			int iRead=0, iTotalRead=0;
-			while(iTotalRead<iContentLength)
+			long lTotalRead = 0;
+			int iRead=0;
+			while(lTotalRead<lContentLength)
 			{
 				iRead = is.read(charBuf);
-				iTotalRead += iRead;
+				lTotalRead += iRead;
 				baos.write(charBuf, 0 , iRead);
 			}
 		}
@@ -314,12 +316,12 @@ public class Document implements ErrorDetect,Cloneable
 	/**
 	 * For creating documents from mutlipart/mime posts
 	 */
-	public Document(SystemContext paramSystem, SessionContext paramSession, String szPageName, ByteStreamReader is, String szContentType, String szBoundary, int iContentLength, String sCharset)
+	public Document(SystemContext paramSystem, SessionContext paramSession, String sPageName, ByteStreamReader is, String szContentType, String szBoundary, long lContentLength, String sCharset)
 	{
 		if(sCharset==null) sCharset = HTTP.DEFAULT_CHAR_ENCODING;
 		byte charBuf[]=new byte[READ_CHUNK_SIZE];
 		byte bufToProcess[]=null;
-		//String szLine;
+		//String szLine; 
 		//long lTotalWritten = 0;
 		//long lStart = System.currentTimeMillis();
 		File fDebug=null;
@@ -336,14 +338,14 @@ public class Document implements ErrorDetect,Cloneable
 				fDebug = File.createTempFile("debugmime_"+String.valueOf(pSystem.getSystemUniqueNumber()), null, pSystem.getTempDir());            
 				fout = (FileOutputStream )(new FileOutputStream(fDebug));
 			}
-			PageName = szPageName;
+			PageName = sPageName;
 			int iRead=0, iTotalRead=0;
 			m_sSkipUntil = szBoundary;
-			while(iTotalRead<iContentLength)
+			while(iTotalRead<lContentLength)
 			{
 				//long lStartLoop = System.currentTimeMillis();
 				iRead = is.read(charBuf);
-				if(iRead<=0) throw new IOException("End of input reached prior to content length. Read " + iTotalRead + " of " + iContentLength + " bytes");
+				if(iRead<=0) throw new IOException("End of input reached prior to content length. Read " + iTotalRead + " of " + lContentLength + " bytes");
 
 				if(fout!=null) fout.write(charBuf, 0, iRead);
 				iTotalRead += iRead;
@@ -388,7 +390,7 @@ public class Document implements ErrorDetect,Cloneable
 		}//try
 		catch(Exception e)
 		{      
-			pSystem.doError("Document.Construct", new String[]{szPageName, e.toString()}, pSystem);
+			pSystem.doError("Document.Construct", new String[]{sPageName, e.toString()}, pSystem);
 			e.printStackTrace();
 			this.addItemOnCreate(Document.ERROR_FIELD_NAME, e.toString());
 			m_bDocumentCreatedOK = false;

@@ -180,7 +180,7 @@ public class AddInStatistic implements ErrorDetect
 	 */
 	public void increment(double dIncrementBy)
 	{
-		updateNumeric(new Double(dIncrementBy), false);
+		updateNumeric(Double.valueOf(dIncrementBy), false);
 	}
 
 	/**

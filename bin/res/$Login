@@ -1,0 +1,44 @@
+<html>
+<P@Version @P>
+<head>
+	<title>Tornado Server Login</title>
+	<link REL="SHORTCUT ICON" href="/icons/puakma.ico?OpenResource">
+	<link rel="stylesheet" type="text/css" href="/lib/puakma.css">
+	<script language="JavaScript" type="text/javascript" src="/lib/puakma.js"></script>
+</head>
+<style>
+body, td{
+	font: normal 12px Verdana, Arial,Verdana,Helvetica,sans-serif;
+	letter-spacing: 1px;
+}
+
+hr{
+	height: 1px;	
+	color: 	#c0c0c0;
+}
+
+</style>
+<P@Form @P>
+<P@Hidden name="$LoginPage" value="1" @P>
+<P@Hidden name="$RedirectTo" value="" @P>
+<h3><center>Tornado Server Login</center></h3>
+<hr/>
+<br/>
+<center>
+<table border="0" bgcolor="c0c0c0" cellpadding="4" style="border: 2px solid #000000;">
+<tr><td>UserName:</td><td><P@Text name="UserName" value="" size="12" @P></td></tr>
+<tr><td>Password:</td><td><P@Password name="Password" value="" size="12" @P></td></tr>
+<tr><td></td><td align="right"><input name="Login" value="   Login   " type="submit" /></td></tr>
+</table>
+</center>
+<center><b><P@Computed name="$MessageString" Value="" @P></b></center>
+<br/>
+<br/>
+<a target="_blank" href="http://www.puakma.net/"><img src="/icons/tornado.gif" border="0" align="right" /></a>
+<script language="JavaScript">
+<!--
+  document.forms[0].UserName.focus();
+  // -->
+</script>
+</form>
+</html>

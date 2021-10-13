@@ -128,7 +128,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private long m_lStart = System.currentTimeMillis();
 	//private java.util.Date m_dtStart = new java.util.Date(); //timestamp object creation so we can work out transaction time
 	private ArrayList m_environment_lines = new ArrayList(); // Stores all other data lines sent to us
-
+	//instance of any running action
+	private ActionRunnerInterface m_action = null;
+	
 	private int m_iInboundSize=0;
 	private String m_sInboundMethod="";
 	private String m_sInboundPath="";
@@ -170,6 +172,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	public final static int RET_UNAVAILABLE = 503;
 	public final static int RET_NOT_MODIFIED = 304;
 	private String m_sHTTPURLPrefix="http";
+	//used as a failsafe. If some bad interal error occurs, ensures we don't get stuck in an infinite loop.
+	private boolean m_bIsInErrorState = false;
 
 	/**
 	 * constructor used by HTTPServer
@@ -854,12 +858,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		String szBoundary = Util.getMessageBoundary(szContentType);
 		szContentType = getContentType(szContentType);
 		String szContentLength = Util.getMIMELine(m_environment_lines, "Content-Length");
-		int iLength;
+		long lLength = 0;
 
 		try{
-			iLength = Integer.parseInt(puakma.util.Util.trimSpaces(szContentLength));
-		}catch(Exception nfe){iLength=-1;}
-		if(iLength<0) 
+			lLength = Integer.parseInt(puakma.util.Util.trimSpaces(szContentLength));
+		}catch(Exception nfe){lLength=-1;}
+		if(lLength<0) 
 		{
 			//dumpHeaders(m_environment_lines);
 			sendHTTPResponse(RET_LENGTHREQUIRED, "Content length required", null, HTTP_VERSION, null, null);
@@ -868,9 +872,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		//check if there is an max POST size and if so enforce it
 		long lMaxUpload = m_http_server.getMaxUploadBytes();
-		if(lMaxUpload>=0 && iLength>lMaxUpload)
+		if(lMaxUpload>=0 && lLength>lMaxUpload)
 		{
-			String sMessage = pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.ContentLengthLimit"), new String[]{String.valueOf(iLength), String.valueOf(lMaxUpload), m_sInboundPath });
+			String sMessage = pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.ContentLengthLimit"), new String[]{String.valueOf(lLength), String.valueOf(lMaxUpload), m_sInboundPath });
 			m_pSystem.doError(sMessage, this);
 			sendHTTPResponse(RET_BADREQUEST, "Bad request", null, HTTP_VERSION, null, sMessage.getBytes());
 			return;
@@ -905,9 +909,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			String sCharSet = getInboundCharset(rPath);
 			if(szContentType.equals(Document.CONTENT_MULTI))
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, szBoundary, iLength, sCharSet);
+				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, szBoundary, lLength, sCharSet);
 			else
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, iLength, sCharSet);
+				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, lLength, sCharSet);
 
 			//m_pSystem.doDebug(0, "doPost() C " + document_path +" " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 			if(!docIn.isDocumentCreatedOK())
@@ -1433,10 +1437,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	/**
 	 * Runs the appropriate action against the document
 	 */
-	private ActionReturn runActionOnDocument(HTMLDocument doc, String szActionClass, boolean bOpenPage)
+	private ActionReturn runActionOnDocument(HTMLDocument doc, String sActionClass, boolean bOpenPage)
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "runActionOnDocument()", this);
-		ActionReturn act_return = null;
+		ActionReturn actionReturn = null;
 		//String szRedirect;
 		//StringBuilder sbOut=null;
 		SystemContext SysCtx=null;
@@ -1445,55 +1449,55 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			try
 			{
-				if(szActionClass==null)
+				if(sActionClass==null)
 				{
 					if(doc.designObject.getDesignType() == DesignElement.DESIGN_TYPE_ACTION)
-						szActionClass = doc.designObject.getDesignName();
+						sActionClass = doc.designObject.getDesignName();
 					else
 					{
 						if(bOpenPage)
-							szActionClass = doc.designObject.getParameterValue(DesignElement.PARAMETER_OPENACTION);
+							sActionClass = doc.designObject.getParameterValue(DesignElement.PARAMETER_OPENACTION);
 						else
-							szActionClass = doc.designObject.getParameterValue(DesignElement.PARAMETER_SAVEACTION);
+							sActionClass = doc.designObject.getParameterValue(DesignElement.PARAMETER_SAVEACTION);
 					}
 				}//szActionClass==null
-				if(szActionClass!=null && szActionClass.length()!=0)
+				if(sActionClass!=null && sActionClass.length()!=0)
 				{
 					if(m_http_server.isDebug())
 					{
 						if(bOpenPage)
-							m_pSystem.doDebug(0, "Running OpenAction: " + szActionClass, this);
+							m_pSystem.doDebug(0, "Running OpenAction: " + sActionClass, this);
 						else
-							m_pSystem.doDebug(0, "Running SaveAction: " + szActionClass, this);
+							m_pSystem.doDebug(0, "Running SaveAction: " + sActionClass, this);
 					}  
 
 					//long lStart = System.currentTimeMillis();
 					//BJU. Made shared so that classloader references are maintained.
 					//ActionClassLoader aLoader= new ActionClassLoader(this, m_pSystem, m_pSession.getSessionContext(), doc.rPath.Group, doc.rPath.Application, szActionClass);            
 
-					act_return = new ActionReturn();
+					actionReturn = new ActionReturn();
 					SysCtx = (SystemContext)m_pSystem.clone();
 					//SessionContext SessCtx = (SessionContext)m_pSession.getSessionContext().clone(); //ditto with the session
 					SessionContext SessCtx = (SessionContext)m_pSession.getSessionContext(); //BJU 9/4/08 I don't believe this needs to be cloned as per line above
 					HTTPSessionContext httpSessCtx = new HTTPSessionContext(this, SysCtx, SessCtx, doc.rPath);
 					SharedActionClassLoader aLoader = m_pSystem.getActionClassLoader(doc.rPath); //, DesignElement.DESIGN_TYPE_ACTION);
-					Class runclass = aLoader.getActionClass(szActionClass, DesignElement.DESIGN_TYPE_ACTION);
-					if(runclass==null) return act_return;            
+					Class runclass = aLoader.getActionClass(sActionClass, DesignElement.DESIGN_TYPE_ACTION);
+					if(runclass==null) return actionReturn;            
 					Object object = runclass.newInstance();					
-					ActionRunnerInterface act = (ActionRunnerInterface)object;					
-					act.init(httpSessCtx, doc, doc.rPath.Group, doc.rPath.Application);
+					m_action = (ActionRunnerInterface)object;					
+					m_action.init(httpSessCtx, doc, doc.rPath.Group, doc.rPath.Application);
 
 					//setup the context classloader see http://www.javaworld.com/javaworld/javaqa/2003-06/01-qa-0606-load.html
 
 					Thread.currentThread().setContextClassLoader(aLoader);
-					act_return.RedirectTo = act.execute();
+					actionReturn.RedirectTo = m_action.execute();
 					Thread.currentThread().setContextClassLoader(ctx_cl);
 
 					if(m_http_server.isDebug()) SysCtx.checkConnections(doc.rPath.getFullPath(), m_pSession.getSessionContext());
 					//act_return.sBuffer = act.getStringBuilder();
-					act_return.HasStreamed = act.hasStreamed();
-					act_return.bBuffer = act.getByteBuffer();
-					act_return.ContentType = act.getContentType(); 
+					actionReturn.HasStreamed = m_action.hasStreamed();
+					actionReturn.bBuffer = m_action.getByteBuffer();
+					actionReturn.ContentType = m_action.getContentType(); 
 					//long lEnd = System.currentTimeMillis() - lStart;
 					//System.out.println(szActionClass + " took " + lEnd + "ms");
 				}
@@ -1501,24 +1505,24 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			catch(java.lang.OutOfMemoryError ome)
 			{
 				Thread.currentThread().setContextClassLoader(ctx_cl);
-				act_return = null; //in case there is any buffer allocated, remove all allocated memory
+				actionReturn = null; //in case there is any buffer allocated, remove all allocated memory
 				//request a gc then give the JVM some time to garbage collect
 				//System.gc();
 				try{Thread.sleep(5000);} catch(Exception e){}
 				ome.printStackTrace();
-				m_pSystem.doError(ome.toString() + " path=[" + doc.rPath.getFullPath()+"] class=["+szActionClass+"]", this);				
-				act_return = new ActionReturn();
-				return act_return;
+				m_pSystem.doError(ome.toString() + " path=[" + doc.rPath.getFullPath()+"] class=["+sActionClass+"]", this);				
+				actionReturn = new ActionReturn();
+				return actionReturn;
 			}
 			catch(Throwable e)
 			{
 				Thread.currentThread().setContextClassLoader(ctx_cl);
 
-				String sPath = szActionClass;
+				String sPath = sActionClass;
 				StringBuilder sb = new StringBuilder(256);
 				StringBuilder sbRaw = new StringBuilder(256);
 				sbRaw.append(e.toString()+"\r\n");
-				if(doc!=null) sPath = doc.rPath.getFullPath() + " - " + szActionClass;
+				if(doc!=null) sPath = doc.rPath.getFullPath() + " - " + sActionClass;
 				String sRawMsg = m_pSystem.getSystemMessageString("HTTPRequest.ActionExecuteError");
 				String sMsg = puakma.error.pmaLog.parseMessage(sRawMsg, new String[]{sPath, e.toString()});
 				m_pSystem.doError(sMsg, this);
@@ -1559,7 +1563,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		}//if
 
 
-		return act_return;
+		return actionReturn;
 	}
 
 	/**
@@ -2482,7 +2486,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		docHTML.removeItem(Document.PAGE_REDIRECT_ITEM);
 		String sDocPath = docHTML.rPath.getPathToApplication() + '/' + iErrCode + "?OpenPage";
 		docHTML.removeParsedParts();
-		int iReturnCode = performRequest(sDocPath, docHTML, true, false, true);     
+		//int iReturnCode = performRequest(sDocPath, docHTML, true, false, true);
+		int iReturnCode = RET_INTERNALSERVERERROR;
+		if(m_bIsInErrorState) m_bCloseConnection = true;
+		if(!m_bIsInErrorState) iReturnCode = performRequest(sDocPath, docHTML, true, false, true);
+		m_bIsInErrorState  = true;
 		switch(iReturnCode)
 		{
 		case RET_FILENOTFOUND:
@@ -2550,6 +2558,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private void doCleanup()
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doCleanup()", this);
+		if(m_action!=null) m_action.requestQuit();
 		try
 		{
 			m_sock.close();

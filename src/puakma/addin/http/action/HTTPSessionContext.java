@@ -412,6 +412,7 @@ public class HTTPSessionContext implements ErrorDetect
 		return tsi.getDesignElement(m_rPath.Group, m_rPath.Application, sDesignName, iDesignType);
 	}
 
+
 	/**
 	 * Return a list of all design element names for the specified type. Use -1 to get all design element names
 	 * regardless of type

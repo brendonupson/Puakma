@@ -91,8 +91,8 @@ public class STATS extends pmaAddIn
 		//long lUsedHeapSizeBytes = lMaxHeapSizeBytes - lFreeHeapSizeBytes;
 		long lJVMUsedSizeBytes = Runtime.getRuntime().totalMemory();
 		long lUsedAppSizeBytes = lJVMUsedSizeBytes - lFreeHeapSizeBytes;
-		this.setStatistic(STATISTIC_KEY_MEMORYJVMINUSEPERMINUTE, new Double(lJVMUsedSizeBytes/1024/1024));
-		this.setStatistic(STATISTIC_KEY_MEMORYAPPINUSEPERMINUTE, new Double(lUsedAppSizeBytes/1024/1024));
+		this.setStatistic(STATISTIC_KEY_MEMORYJVMINUSEPERMINUTE, Double.valueOf(lJVMUsedSizeBytes/1024/1024));
+		this.setStatistic(STATISTIC_KEY_MEMORYAPPINUSEPERMINUTE, Double.valueOf(lUsedAppSizeBytes/1024/1024));
 	}
 
 	/**
@@ -105,7 +105,7 @@ public class STATS extends pmaAddIn
 		try
 		{		
 			final ThreadMXBean tmb = ManagementFactory.getThreadMXBean();
-			this.setStatistic(STATISTIC_KEY_THREADCOUNTPERMINUTE, new Double(tmb.getThreadCount())); 
+			this.setStatistic(STATISTIC_KEY_THREADCOUNTPERMINUTE, Double.valueOf(tmb.getThreadCount())); 
 			if(!tmb.isThreadCpuTimeEnabled()) tmb.setThreadCpuTimeEnabled(true);
 			if(tmb.isCurrentThreadCpuTimeSupported())
 			{
@@ -143,7 +143,7 @@ public class STATS extends pmaAddIn
 		double dCPUPercent =  (dCPUTimeForPeriod/dTimeInPeriod) * 100;
 		if(dCPUPercent>100) dCPUPercent = 100;
 		if(dCPUPercent<0) dCPUPercent = 0; // Fk knows how this happens but it does occasionally
-		this.setStatistic(STATISTIC_KEY_CPUPERMINUTE, new Double(dCPUPercent)); 
+		this.setStatistic(STATISTIC_KEY_CPUPERMINUTE, Double.valueOf(dCPUPercent)); 
 
 		//System.out.println(dCPUPercent + "% dTimeInPeriod:"+dTimeInPeriod + " dCPUTimeForPeriod:"+dCPUTimeForPeriod);
 

@@ -36,7 +36,6 @@ import java.util.Properties;
 import javax.net.ServerSocketFactory;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
@@ -55,7 +54,6 @@ import puakma.system.SystemContext;
 import puakma.system.pmaSystem;
 import puakma.system.pmaThreadInterface;
 import puakma.system.pmaThreadPoolManager;
-import puakma.util.Util;
 
 
 
@@ -253,7 +251,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 			{
 				updateStatusLine();						
 				Socket sock = m_ss.accept();
-
+				//sock.setSoLinger(true, 1); //1 second
 				request_id++;
 				//System.out.println(request_id + " handoff");	
 
@@ -439,8 +437,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 					//System.out.println("====== Finished handshake: " + sess.getPeerPrincipal().getName());
 					//
 					//InputStream inputstream = sslSock.getInputStream();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
+				} catch (Exception e) {			
 					e.printStackTrace();
 					return;
 				}
@@ -655,62 +652,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 	{
 		TornadoServerInstance tsi = TornadoServer.getInstance();
 		return tsi.getDesignElement(sAppGroup, sAppName, sDesignName, iType);
-		/*String sTypes[]=null;
-		String szKey="";
-		StringBuilder sbKey = new StringBuilder(50);    
-		DesignElement design=null;
-
-		if(szAppGroup!=null && szAppGroup.length()>0)
-		{
-			sbKey.append('/');
-			sbKey.append(szAppGroup);
-		}
-		if(szApplication !=null && szApplication.length()>0)
-		{
-			sbKey.append('/');
-			sbKey.append(szApplication);
-			sbKey.append(getPuakmaFileExt());
-		}
-		if(szDesignName!=null && szDesignName.length()>0)
-		{
-			sbKey.append('/');
-			sbKey.append(szDesignName);
-			sbKey.append('/');
-			//sbKey.append(iType); //todo!!
-			if(iType==DesignElement.DESIGN_TYPE_HTTPACCESSIBLE)
-			{
-				sTypes = new String[4];
-				sTypes[0] = String.valueOf(DesignElement.DESIGN_TYPE_ACTION);
-				sTypes[1] = String.valueOf(DesignElement.DESIGN_TYPE_RESOURCE);
-				sTypes[2] = String.valueOf(DesignElement.DESIGN_TYPE_PAGE);
-				sTypes[3] = String.valueOf(DesignElement.DESIGN_TYPE_BUSINESSWIDGET);
-			}
-			else
-			{
-				sTypes = new String[1];
-				sTypes[0] = String.valueOf(iType);
-			}
-		}
-
-
-		if(sTypes!=null)
-		{
-			for(int i=0; i<sTypes.length; i++)
-			{
-				szKey = sbKey.toString().toLowerCase() + sTypes[i];
-				design = (DesignElement)m_Parent.m_cacheDesign.getItem(szKey);
-				if(design!=null) break;
-
-			}
-		}
-
-		if(design==null)
-		{ 
-			design = getDesignElementFromRDBMS(m_pSystem, m_pSession, szApplication, szAppGroup, szDesignName, iType);
-			if(design!=null) m_Parent.m_cacheDesign.addItem(design);
-		}
-		return design;
-		 */
+		
 	}
 
 
