@@ -130,7 +130,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private ArrayList m_environment_lines = new ArrayList(); // Stores all other data lines sent to us
 	//instance of any running action
 	private ActionRunnerInterface m_action = null;
-	
+
 	private int m_iInboundSize=0;
 	private String m_sInboundMethod="";
 	private String m_sInboundPath="";
@@ -144,6 +144,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private long m_lUnique=0;
 	private static final String MIME_START = "---------------9696"; //+ ""+pmaSystem.getBuild();
 
+	private boolean m_bShouldDisableBasicAuth = false;
 	//return codes - use w3c http return codes
 	public final static int RET_OK = 200;
 	public final static int RET_PARTIAL_CONTENT = 206;
@@ -194,8 +195,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//System.out.println(request_id + " constructor()" );
 		m_sSystemHostName = szHostName;
 		m_bAllowByteRangeServing = m_http_server.serverAllowsByteServing();
+		
+		m_bShouldDisableBasicAuth = m_http_server.shouldDisableBasicAuth();
 	}
-	
+
 
 	/**
 	 * determines if the connection is SSL or not.
@@ -205,7 +208,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	{
 		return m_bSecure;
 	}
-	
+
 	public void setSessionPrincipal(Principal principal) 
 	{
 		m_principal = principal;		
@@ -222,7 +225,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		return m_bDataPosted;
 	}
 
-	
+
 	/**
 	 * Invoked by the HTTPServer for each request.  Do not use publicly.
 	 */
@@ -585,27 +588,30 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		if(m_pSession.isLoggedIn()) return;
 
-		String sAuth = Util.getMIMELine(m_environment_lines, "Authorization");
-		if(sAuth!=null) //try to log in the session....
+		if(!m_bShouldDisableBasicAuth)
 		{
-			//System.out.println(sAuth);
-			//sAuth may be "Basic YnVwc31uOnJ1c3NpYQ==" or just "YnVwc31uOnJ1c3NpYQ=="
-			int iSpace = sAuth.indexOf(' ');
-			if(iSpace>=0) sAuth = sAuth.substring(iSpace+1);        
-			String sUserNamePass = new String(Util.base64Decode(sAuth));
-			int iPos = sUserNamePass.indexOf(':');
-			if(iPos>=0)
+			String sAuth = Util.getMIMELine(m_environment_lines, "Authorization");
+			if(sAuth!=null) //try to log in the session....
 			{
-				String sUser = sUserNamePass.substring(0, iPos);
-				String sPass = sUserNamePass.substring(iPos+1, sUserNamePass.length());
-				//m_pSystem.doDebug(0, "loginSessionByHTTPHeader() A " + (System.currentTimeMillis()-m_lStart) + "ms", this);
-				if(m_pSystem.loginSession(m_pSession.getSessionContext(), sUser, sPass, m_sInboundPath))
+				//System.out.println(sAuth);
+				//sAuth may be "Basic YnVwc31uOnJ1c3NpYQ==" or just "YnVwc31uOnJ1c3NpYQ=="
+				int iSpace = sAuth.indexOf(' ');
+				if(iSpace>=0) sAuth = sAuth.substring(iSpace+1);        
+				String sUserNamePass = new String(Util.base64Decode(sAuth));
+				int iPos = sUserNamePass.indexOf(':');
+				if(iPos>=0)
 				{
-					m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_LOGINSPERHOUR, 1);
+					String sUser = sUserNamePass.substring(0, iPos);
+					String sPass = sUserNamePass.substring(iPos+1, sUserNamePass.length());
+					//m_pSystem.doDebug(0, "loginSessionByHTTPHeader() A " + (System.currentTimeMillis()-m_lStart) + "ms", this);
+					if(m_pSystem.loginSession(m_pSession.getSessionContext(), sUser, sPass, m_sInboundPath))
+					{
+						m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_LOGINSPERHOUR, 1);
+					}
+					//m_pSystem.doDebug(0, "loginSessionByHTTPHeader() B " + (System.currentTimeMillis()-m_lStart) + "ms", this);
+					m_bSendSessionCookie=true;
+					return;
 				}
-				//m_pSystem.doDebug(0, "loginSessionByHTTPHeader() B " + (System.currentTimeMillis()-m_lStart) + "ms", this);
-				m_bSendSessionCookie=true;
-				return;
 			}
 		}
 
@@ -682,9 +688,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private SessionContext getSession(ArrayList m_environment_lines)
 	{
 		SessionContext sessCtx=null;
-		
-		
-		
+
+
+
 		InetAddress addr = null;
 		String szIP = Util.getMIMELine(m_environment_lines, "X-Forwarded-For"); //did we come through a proxy?
 		m_sClientIPAddress = szIP;      
@@ -700,14 +706,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			int iPos = szIP.indexOf(',');
 			if(iPos>0) szIP = szIP.substring(0, iPos);
-								
+
 			try{ addr = InetAddress.getByName(szIP); } catch(Exception e){}
 			m_sClientIPAddress = szIP;
 			m_sClientHostName = m_sClientIPAddress;
 			if(addr!=null && m_http_server.canLookupHostName()) m_sClientHostName = addr.getHostName();
-			
+
 		}
-		
+
 		sessCtx = m_pSystem.createNewSession(addr, Util.getMIMELine(m_environment_lines, "User-Agent"));
 		if(m_principal!=null)
 		{
@@ -3123,9 +3129,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	}
 
 
-	
 
-	
+
+
 
 
 

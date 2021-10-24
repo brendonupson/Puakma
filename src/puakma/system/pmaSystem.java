@@ -73,8 +73,8 @@ public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
 	private final String PUAKMA_VERSION="6.0.14";
-	private final int PUAKMA_BUILD=1063;
-	private final String PUAKMA_BUILD_DATE="13 Oct 2021"; 
+	private final int PUAKMA_BUILD=1064;
+	private final String PUAKMA_BUILD_DATE="17 Oct 2021"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 

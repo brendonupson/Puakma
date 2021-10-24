@@ -108,6 +108,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 	private NumberFormat m_nfWhole = NumberFormat.getIntegerInstance();
 	private NumberFormat m_nfMB = NumberFormat.getInstance();
 	private String m_sHTTPSSLContext = "";
+	private boolean m_bShouldDisableBasicAuth = false;
 
 	public static final String SESSIONID_LABEL="_pma_sess_id";
 
@@ -165,7 +166,11 @@ public class HTTPServer extends Thread implements ErrorDetect
 		if(szTemp!=null && szTemp.equals("1")) m_bLogInbound = true;
 
 		szTemp =m_pSystem.getSystemProperty("HTTPgzip");
-		if(szTemp!=null && szTemp.equals("1")) m_bGZipOutput = true;            
+		if(szTemp!=null && szTemp.equals("1")) m_bGZipOutput = true;  
+		
+		szTemp =m_pSystem.getSystemProperty("HTTPDisableBasicAuth");
+		if(szTemp!=null && szTemp.equals("1")) m_bShouldDisableBasicAuth = true;  
+		
 
 		InetAddress cInterface=null;
 		m_sInterface = m_pSystem.getSystemProperty("HTTPInterface");
@@ -956,6 +961,12 @@ public class HTTPServer extends Thread implements ErrorDetect
 	public boolean canLookupHostName() 
 	{
 		return m_Parent.canLookupHostName();
+	}
+
+	public boolean shouldDisableBasicAuth() 
+	{
+		// TODO Auto-generated method stub
+		return m_bShouldDisableBasicAuth;
 	}
 
 }//class
