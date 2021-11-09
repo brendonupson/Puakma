@@ -616,7 +616,8 @@ public class Document implements ErrorDetect,Cloneable
 			{
 				String sOldValue = di.getStringValue();
 				removeItem(sItemName);
-				dmi = new DocumentMultiItem(this, sItemName, sOldValue);
+				//dmi = new DocumentMultiItem(this, sItemName, sOldValue);
+				dmi = new DocumentMultiItem(this, sItemName, new String[] {sOldValue});
 				dmi.appendValue(sItemValue);
 			}
 			else
