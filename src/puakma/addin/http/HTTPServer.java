@@ -82,7 +82,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 	public String HTTP_PublicDir;
 	public String m_sHTTPMaxSessionRedirect="";
 	public int iHTTPPortTimeout=30000; //30 seconds
-	private int iHTTPPort=-1;
+	private int m_iHTTPPort=-1;
 	public Properties propMime= new Properties();
 	//allow anonymous access to the public directory
 	public boolean bAllowAnonPublicDir=false;
@@ -118,7 +118,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 		m_bSSL = paramSSL;
 		m_Parent = paramParent;
 		m_pSystem = (SystemContext)paramCtx.clone();
-		iHTTPPort = iPort;
+		m_iHTTPPort = iPort;
 		setDaemon(true);
 	}
 
@@ -201,7 +201,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 			min_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMinThreads"));
 			thread_pool_timeout = Integer.parseInt(m_pSystem.getSystemProperty("HTTPThreadCreateTimeout"));
 		}catch(Exception e){}
-		m_tpm = new pmaThreadPoolManager(m_pSystem, min_pooled_threads, max_pooled_threads, thread_pool_timeout, "http-"+iHTTPPort);
+		m_tpm = new pmaThreadPoolManager(m_pSystem, min_pooled_threads, max_pooled_threads, thread_pool_timeout, "http-"+m_iHTTPPort);
 		m_tpm.start();
 
 
@@ -225,28 +225,28 @@ public class HTTPServer extends Thread implements ErrorDetect
 		{
 			if(m_bSSL)
 			{
-				ServerSocketFactory ssf = getServerSocketFactory(m_bSSL);
+				ServerSocketFactory ssf = getServerSocketFactory(m_bSSL, m_iHTTPPort);
 				if(ssf!=null) 
 				{
-					m_ss = ssf.createServerSocket(iHTTPPort, iHTTPPortBacklog, cInterface);					
+					m_ss = ssf.createServerSocket(m_iHTTPPort, iHTTPPortBacklog, cInterface);					
 				}
 
 			}
 			else
 			{				
-				m_ss = new ServerSocket (iHTTPPort, iHTTPPortBacklog, cInterface);
+				m_ss = new ServerSocket (m_iHTTPPort, iHTTPPortBacklog, cInterface);
 			}
 		}
 		catch(Exception ioe)
 		{
-			m_pSystem.doError("HTTPServer.NoPortOpen", new String[]{String.valueOf(iHTTPPort)}, this);
+			m_pSystem.doError("HTTPServer.NoPortOpen", new String[]{String.valueOf(m_iHTTPPort)}, this);
 			if(m_sInterface!=null) m_pSystem.doError("HTTPServer.InterfaceError", new String[]{m_sInterface}, this);
 			shutdownAll();
 			m_Parent.removeStatusLine(pStatus);
 			return;
 		}
 
-		m_pSystem.doInformation("HTTPServer.Listening", new String[]{String.valueOf(iHTTPPort)}, this);
+		m_pSystem.doInformation("HTTPServer.Listening", new String[]{String.valueOf(m_iHTTPPort)}, this);
 
 		// main loop
 		while(m_bRunning)
@@ -560,7 +560,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 	{
 		String sSSL="";
 		if(m_bSSL) sSSL=m_sHTTPSSLContext;//"SSL";
-		return "HTTPServer(" + iHTTPPort + sSSL + ")" ;
+		return "HTTPServer(" + m_iHTTPPort + sSSL + ")" ;
 	}
 
 	public String getErrorUser()
@@ -569,26 +569,44 @@ public class HTTPServer extends Thread implements ErrorDetect
 	}
 
 
-
+	private String getKeyRingPassword(int iPort)
+	{		
+		String sPW = m_pSystem.getSystemProperty("HTTPSSLKeyRingPW"+iPort);
+		if(sPW==null) sPW = m_sHTTPSSLKeyRingPW;
+		if(sPW==null) return "";
+		return sPW;
+	}
+	
+	private String getKeyRingFilePath(int iPort)
+	{		
+		String sPath = m_pSystem.getSystemProperty("HTTPSSLKeyRing"+iPort);
+		if(sPath==null) sPath = m_sHTTPSSLKeyRing;
+		if(sPath==null) return "";
+		return sPath;		
+	}
 
 	/**
-	 * Determine the type of socket to open
+	 * Determine the type of socket to open. Can use a different keystore for each port
 	 */
-	private ServerSocketFactory getServerSocketFactory(boolean bGetSSL) throws Exception
+	private ServerSocketFactory getServerSocketFactory(boolean bGetSSL, int iPort) throws Exception
 	{
 		if(bGetSSL)
 		{
 			SSLServerSocketFactory ssf = null;
 			try
 			{
+				String sKeyRingPW = getKeyRingPassword(iPort);
+				String sKeyRingFilePath = getKeyRingFilePath(iPort);
+				
 				// set up key manager to do server authentication				
-				char[] cKeyStorePassphrase = m_sHTTPSSLKeyRingPW.toCharArray(); //password to access keystore
+				char[] cKeyStorePassphrase = sKeyRingPW.toCharArray(); //m_sHTTPSSLKeyRingPW.toCharArray(); //password to access keystore
 
 
 				SSLContext ctx = SSLContext.getInstance(m_sHTTPSSLContext); //TLS | SSL
 				KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
 				KeyStore ks = KeyStore.getInstance("JKS");
-				ks.load(new FileInputStream(m_sHTTPSSLKeyRing), cKeyStorePassphrase);
+				//ks.load(new FileInputStream(m_sHTTPSSLKeyRing), cKeyStorePassphrase);
+				ks.load(new FileInputStream(sKeyRingFilePath), cKeyStorePassphrase);
 				kmf.init(ks, cKeyStorePassphrase);
 
 				TrustManager trustManagers[] = null;
@@ -615,21 +633,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 				System.out.println("EnabledProtocols  :" + Util.implode(enabledProtocols, ","));
 				System.out.println("EnabledCiphers    :" + Util.implode(availableCiphers, ","));
 */
-				return ssf;	
-				/*}
-				else //plain SSL
-				{
-					SSLContext ctx = SSLContext.getInstance("SSL"); //TLS //SSLv3
-					KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-					KeyStore ks = KeyStore.getInstance("JKS");
-
-					ks.load(new FileInputStream(m_sHTTPSSLKeyRing), cKeyStorePassphrase);
-					kmf.init(ks, cKeyStorePassphrase);
-					ctx.init(kmf.getKeyManagers(), null, null);
-
-					ssf = ctx.getServerSocketFactory();          
-					return ssf;
-				}*/
+				return ssf;				
 			}
 			catch (Exception e)
 			{
