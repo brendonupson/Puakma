@@ -34,8 +34,6 @@ import puakma.addin.pmaAddIn;
 import puakma.addin.pmaAddInStatusLine;
 import puakma.error.ErrorDetect;
 import puakma.system.Document;
-import puakma.system.SessionContext;
-import puakma.system.SystemContext;
 import puakma.system.pmaSystem;
 import puakma.system.pmaThread;
 import puakma.system.pmaThreadInterface;
@@ -343,7 +341,8 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		try
 		{
 			cx = m_pSystem.getSystemConnection();
-			String szQuery = "SELECT MAILHEADER.MailBodyID FROM MAILHEADER,MAILBODY WHERE MAILHEADER.MailBodyID=MAILHEADER.MailBodyID AND MAILHEADER.MessageStatus='P' AND (MAILHEADER.RetryAfter IS NULL OR MAILHEADER.RetryAfter<?)";
+			//String szQuery = "SELECT MAILHEADER.MailBodyID FROM MAILHEADER,MAILBODY WHERE MAILHEADER.MailBodyID=MAILHEADER.MailBodyID AND MAILHEADER.MessageStatus='P' AND (MAILHEADER.RetryAfter IS NULL OR MAILHEADER.RetryAfter<?)";
+			String szQuery = "SELECT MAILHEADER.MailBodyID FROM MAILHEADER WHERE MAILHEADER.MessageStatus='P' AND (MAILHEADER.RetryAfter IS NULL OR MAILHEADER.RetryAfter<?)";
 			prepStmt = cx.prepareStatement(szQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			prepStmt.setTimestamp(1, new Timestamp(System.currentTimeMillis()) );
 			rs = prepStmt.executeQuery();

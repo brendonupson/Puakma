@@ -32,6 +32,7 @@ import puakma.system.SystemContext;
 import puakma.system.pmaSystem;
 import puakma.system.pmaThread;
 import puakma.system.pmaThreadInterface;
+import puakma.util.Util;
 
 public class MailCleaner implements pmaThreadInterface, ErrorDetect
 {
@@ -89,19 +90,21 @@ public class MailCleaner implements pmaThreadInterface, ErrorDetect
 	{
 		long lDeleted=0;
 		Connection cx=null;
+		ResultSet rs = null;
+		PreparedStatement stmt = null;
 
 		try
 		{
 			cx = pSystem.getSystemConnection();      
 			String szQuery = "SELECT MailHeaderID,mb.MailBodyID from MAILBODY mb LEFT JOIN MAILHEADER mh on mb.MailBodyId = mh.MailBodyId WHERE MailHeaderID IS NULL AND (DeliveredDate<? OR DeliveredDate IS NULL)";
-			PreparedStatement Stmt = cx.prepareStatement(szQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt = cx.prepareStatement(szQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			//set to a minute and a half ago so we don't blow away a half saved email message
 			java.util.Date dtPast = puakma.util.Util.adjustDate(new java.util.Date(), 0, 0, 0, 0, -5, 0);
-			Stmt.setTimestamp(1, new java.sql.Timestamp(dtPast.getTime()));
-			ResultSet RS = Stmt.executeQuery();
-			while(RS.next())
+			stmt.setTimestamp(1, new java.sql.Timestamp(dtPast.getTime()));
+			rs = stmt.executeQuery();
+			while(rs.next())
 			{
-				long lMailBodyID = RS.getLong("MailBodyID");
+				long lMailBodyID = rs.getLong("MailBodyID");
 				//System.out.println("cleaning "+lMailBodyID);
 				//if(lMailBodyID>0) //hsqldb numbers from zero....
 				//{
@@ -109,9 +112,7 @@ public class MailCleaner implements pmaThreadInterface, ErrorDetect
 				deleteMessage(lMailBodyID);
 				lDeleted++;
 				//}
-			}
-			RS.close();
-			Stmt.close();
+			}			
 		}
 		catch (Exception sqle)
 		{
@@ -119,6 +120,8 @@ public class MailCleaner implements pmaThreadInterface, ErrorDetect
 		}
 		finally
 		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
 			pSystem.releaseSystemConnection(cx);
 		}
 		return lDeleted;

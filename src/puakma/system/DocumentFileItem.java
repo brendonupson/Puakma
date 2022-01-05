@@ -87,7 +87,7 @@ public class DocumentFileItem extends DocumentItem
 					fData.file.delete();
 					fData = null;
 				}
-				m_vFiles.remove(i);
+				//m_vFiles.remove(i);
 			}
 		}
 	}
