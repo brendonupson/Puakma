@@ -109,8 +109,9 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	private String m_sLDAPSearchBase = "";
 	private String m_sLDAPDNAttribute = "distinguishedName";//"distinguishedName" used by ActiveDirectory
 	private String m_sLDAPGroupMemberAttribute = "memberOf"; //"groupMembership" for NDS
+	private String m_sLDAPSocketFactory = null; //eg "puakma.util.RelaxedSSLSocketFactory"
 	private String m_sFirstNameSurname[] = new String[]{"givenName", "sn"};
-	private long m_lConnectTimeoutMS = -1;
+	private long m_lConnectTimeoutMS = 5000;
 	private boolean m_bDebug = false;
 
 
@@ -155,6 +156,10 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		sTemp = SysCtx.getSystemProperty("LDAPLNameAttribute");
 		if(sTemp!=null && sTemp.length()>0) m_sFirstNameSurname[1] = sTemp;
 
+		sTemp = SysCtx.getSystemProperty("LDAPSocketFactory");
+		if(sTemp!=null && sTemp.length()>0) m_sLDAPSocketFactory = sTemp;
+
+
 		sTemp = SysCtx.getSystemProperty("LDAPConnectTimeoutSeconds");
 		if(sTemp!=null && Util.toInteger(sTemp)>0) m_lConnectTimeoutMS = Util.toInteger(sTemp)*1000;
 
@@ -166,24 +171,25 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private void doStaticSetup()
 	{
-	/*	
+		/*	
 		 m_sLDAPHostConfigEntry = "ldaps://ldap1";		 
 		m_sBindMethod="simple";
 		m_sLDAPSearchBase="o=GoldingContractors";
 		m_sBindUserName="cn=puakma,ou=Puakma,o=goldingcontractors";
-		m_sBindPassword="Kiwi-666";
+		m_sBindPassword="Kiwi9999";
 		m_sLDAPGroupMemberAttribute="groupMembership";
 		m_sLDAPDNAttribute = "";
 		 */
 
 
-		m_sLDAPHostConfigEntry = "ldaps://ad.golding.com.au";
-		//m_sLDAPHostConfigEntry = "ldaps://10.100.104.8";
+		//m_sLDAPHostConfigEntry = "ldaps://ad.golding.com.au";
+		m_sLDAPHostConfigEntry = "ldaps://10.100.104.9,ldaps://10.100.105.9";
 		m_sBindMethod="simple";
 		m_sLDAPSearchBase="OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
 		m_sBindUserName="CN=SVC_PUAKMA,OU=Global Service Accounts,OU=Administration,DC=ad,DC=golding,DC=com,DC=au";
-		m_sBindPassword="m0z@rt7";
-		
+		m_sBindPassword="`zzz";
+		m_sLDAPSocketFactory = "puakma.util.RelaxedSSLSocketFactory";
+
 	}
 
 	public static void main(String sArgs[])
@@ -194,7 +200,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		System.out.println("Using: " + ldap.m_sLDAPHostConfigEntry);
 		ldap.setConnectTimeoutMS(2000);
 		long lStart = System.currentTimeMillis();
-		LoginResult lr = ldap.loginUser("upsonb", "belmontnorth", "", "", "");
+		LoginResult lr = ldap.loginUser("usera", "zzz", "", "", "");
 
 
 
@@ -203,15 +209,15 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		System.out.println("---------------------------"); 
 
 		//String sUserName = "CN=upsonb,OU=Users,OU=MainOffice,OU=Gladstone,OU=QLD,OU=AU,O=GoldingContractors";
-		
-		String sUserName = "CN=Brendon Upson,OU=Users,OU=BNE,OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
+
+		String sUserName = "CN=Test User,OU=Users,OU=BNE,OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
 		String sGroupName = "IT Services - 50000151"; //"PuakmaGlobalAdmin";
 		lStart = System.currentTimeMillis();
 		boolean b = ldap.isUserInGroupPrivate(sUserName, sGroupName);
 		System.out.println(sUserName +" in group ["+sGroupName+"] = "+b);
 		System.out.println("Took: " + (System.currentTimeMillis()-lStart) + "ms");
-		
-		
+
+
 		lStart = System.currentTimeMillis();
 		String sGroup2 = "PuakmaGlobalAdmin";
 		boolean b2 = ldap.isUserInGroupPrivate(sUserName, sGroup2);
@@ -259,13 +265,14 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			htJNDI.put(Context.SECURITY_PRINCIPAL, szUserName);
 			htJNDI.put(Context.SECURITY_CREDENTIALS, szPassword);
 		}
-		
-		
+
+
+		htJNDI.put("com.sun.jndi.ldap.connect.pool.protocol", "plain ssl"); //BU new
 		htJNDI.put("com.sun.jndi.ldap.connect.pool", "true");//Set connection pooling 
-		//System.out.println(i + ". Trying: " + sLDAPHosts[i]);
+		//System.out.println(i + ". Trying: " + sLDAPHosts[i]);		
 		if(m_lConnectTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(m_lConnectTimeoutMS));		
 		htJNDI.put("com.sun.jndi.ldap.connect.pool.maxsize","30");
-		htJNDI.put("com.sun.jndi.ldap.connect.pool.timeout", "10000");//ms
+		htJNDI.put("com.sun.jndi.ldap.connect.pool.timeout", "600000");//ms
 
 		return htJNDI;
 	}
@@ -304,7 +311,76 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 * @return
 	 * @throws NamingException
 	 */
-	private DirContext getInitialDirContext(String sUserName, String sPassword) throws NamingException
+	private DirContext getInitialDirContext(String sUserName, String sPassword) throws Exception
+	{
+		String sLDAPHosts[] = getLDAPHosts();
+
+		if(sLDAPHosts!=null)
+		{
+			String sProviderURLs = Util.implode(sLDAPHosts, " ");
+
+			//System.err.println("Trying LDAP host(s) [" + sProviderURLs +"]");
+			Hashtable htJNDI = setupJNDIEnvironment(sUserName, sPassword);
+
+			htJNDI.remove(Context.PROVIDER_URL);
+			htJNDI.remove(Context.SECURITY_PROTOCOL);
+			htJNDI.remove("java.naming.ldap.factory.socket");
+
+			htJNDI.put(Context.PROVIDER_URL, sProviderURLs);
+
+			if(m_sLDAPSocketFactory != null && m_sLDAPSocketFactory.length()>0)
+			{
+				htJNDI.put("java.naming.ldap.factory.socket", m_sLDAPSocketFactory);//"puakma.util.RelaxedSSLSocketFactory"
+				//so we don't have to mess with the classpath that initiates the jvm
+				ClassLoader newCl = this.getClass().getClassLoader();
+				Thread.currentThread().setContextClassLoader(newCl);
+			}
+			
+			//if ANY entry is secure, all must be. can't mix ldap:xxx and ldaps:xxx
+			if(sProviderURLs.toLowerCase().indexOf("ldaps://")>=0)
+			{
+				// https://docs.oracle.com/javase/jndi/tutorial/ldap/security/ssl.html
+				htJNDI.remove("com.sun.jndi.ldap.connect.timeout");//there's a bug that stops this working with ssl. Grrr				
+				htJNDI.put(Context.SECURITY_PROTOCOL, "ssl");
+			}
+			/*if(sLDAPHosts[i]!=null && sLDAPHosts[i].toLowerCase().startsWith("ldaps:"))
+				{
+					// https://stackoverflow.com/questions/14459280/i-need-to-use-multiple-ldap-provider-how-can-i-check-ldap-server-availability
+					// see http://www-01.ibm.com/support/docview.wss?uid=swg21242786
+					// https://bugs.openjdk.java.net/browse/JDK-8173451
+					htJNDI.remove("com.sun.jndi.ldap.connect.timeout");//there's a bug that stops this working with ssl. Grrr
+					htJNDI.put(Context.SECURITY_PROTOCOL, "ssl");               
+					htJNDI.put("java.naming.ldap.factory.socket", "puakma.util.RelaxedSSLSocketFactory");
+					//so we don't have to mess with the classpath that initiates the jvm
+					ClassLoader newCl = this.getClass().getClassLoader();
+					Thread.currentThread().setContextClassLoader(newCl);
+				}*/
+
+			try
+			{
+				long lStart = System.currentTimeMillis();
+				InitialDirContext ctx = new InitialDirContext(htJNDI);
+				System.err.println("Using LDAP host: " + ctx.getEnvironment().get(Context.PROVIDER_URL) + "  (" + (System.currentTimeMillis()-lStart) + "ms)");
+
+				//System.out.println("OK: " + sLDAPHosts[i]);
+				return ctx;
+			}
+			catch(javax.naming.CommunicationException ce)
+			{
+				System.err.println("ERR: " + ce.toString());
+			}
+			catch(Exception e) //catch all
+			{					
+				throw e; 
+			}
+			//System.err.println("LDAP host is unavailable [" + sLDAPHosts[i] +"]");
+		}
+		throw new javax.naming.CommunicationException("No LDAP servers appear to be available: [" + m_sLDAPHostConfigEntry +"]");
+
+	}
+
+	/*
+	private DirContext old_getInitialDirContext(String sUserName, String sPassword) throws NamingException
 	{
 		String sLDAPHosts[] = getLDAPHosts();
 
@@ -312,6 +388,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		{
 			for(int i=0; i<sLDAPHosts.length; i++)
 			{
+				System.err.println("Trying LDAP host [" + sLDAPHosts[i] +"] " + (i+1) +"/"+sLDAPHosts.length);
 				Hashtable htJNDI = setupJNDIEnvironment(sUserName, sPassword);
 
 				htJNDI.remove(Context.PROVIDER_URL);
@@ -321,7 +398,9 @@ public class LDAPAuthenticator extends pmaAuthenticator
 				if(sLDAPHosts[i]!=null) htJNDI.put(Context.PROVIDER_URL, sLDAPHosts[i]);
 				if(sLDAPHosts[i]!=null && sLDAPHosts[i].toLowerCase().startsWith("ldaps:"))
 				{
+					// https://stackoverflow.com/questions/14459280/i-need-to-use-multiple-ldap-provider-how-can-i-check-ldap-server-availability
 					// see http://www-01.ibm.com/support/docview.wss?uid=swg21242786
+					// https://bugs.openjdk.java.net/browse/JDK-8173451
 					htJNDI.remove("com.sun.jndi.ldap.connect.timeout");//there's a bug that stops this working with ssl. Grrr
 					htJNDI.put(Context.SECURITY_PROTOCOL, "ssl");               
 					htJNDI.put("java.naming.ldap.factory.socket", "puakma.util.RelaxedSSLSocketFactory");
@@ -345,8 +424,9 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			}//for
 		}
 		throw new javax.naming.CommunicationException("No LDAP servers appear to be available: [" + m_sLDAPHostConfigEntry +"]");
+	}*/
 
-	}
+
 
 
 	/**

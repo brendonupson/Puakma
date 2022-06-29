@@ -478,7 +478,7 @@ public class AGENDA extends pmaAddIn
 	 * Removes a given item from the run list
 	 * @param aAction
 	 */
-	public void removeRunner(AgendaAction aAction)
+	public synchronized void removeRunner(AgendaAction aAction)
 	{
 
 		for(int i=0; i<m_vRunningActions.size(); i++)
@@ -543,6 +543,12 @@ public class AGENDA extends pmaAddIn
 			AgendaAction aAction = (AgendaAction)m_vRunningActions.elementAt(i);
 			if(aAction!=null)
 			{
+				if(!aAction.isRunning())
+				{
+					if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
+					continue;
+				}
+				
 				long lRunSeconds = aAction.getRunningTimeSeconds();
 				if(m_lMaxRunSeconds>0 && lRunSeconds>0 && lRunSeconds>m_lMaxRunSeconds)
 				{
@@ -557,7 +563,7 @@ public class AGENDA extends pmaAddIn
 					m_iErrCount++;
 					if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
 				}
-			}
+			}			
 		}
 	}
 
@@ -569,6 +575,7 @@ public class AGENDA extends pmaAddIn
 	private void updateDesignBucket(AgendaAction aAction, boolean bSetLastRunTime)
 	{
 		Connection cx = null;
+		PreparedStatement prepStmt = null;
 		aAction.updateOptionString(bSetLastRunTime);
 		String szOptions = aAction.getOptionString();
 		int iID = aAction.getDesignID();
@@ -576,10 +583,9 @@ public class AGENDA extends pmaAddIn
 		try
 		{
 			cx = m_pSystem.getSystemConnection();
-			PreparedStatement prepStmt = cx.prepareStatement("UPDATE DESIGNBUCKET SET Options=? WHERE DesignBucketID=" + iID);
+			prepStmt = cx.prepareStatement("UPDATE DESIGNBUCKET SET Options=? WHERE DesignBucketID=" + iID);
 			prepStmt.setString(1, szOptions);
-			prepStmt.execute();
-			prepStmt.close();
+			prepStmt.execute();			
 		}
 		catch(Exception e)
 		{
@@ -587,6 +593,7 @@ public class AGENDA extends pmaAddIn
 		}
 		finally
 		{
+			Util.closeJDBC(prepStmt);
 			m_pSystem.releaseSystemConnection(cx);
 		}
 	}

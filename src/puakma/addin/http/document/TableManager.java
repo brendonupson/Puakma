@@ -1156,7 +1156,9 @@ public class TableManager implements ErrorDetect
 		ResultSetMetaData rsmd = rs.getMetaData();
 		for(i=1; i<=rsmd.getColumnCount(); i++)
 		{
-			sColumnName = rsmd.getColumnName(i);
+			//sColumnName = rsmd.getColumnName(i);
+			sColumnName = rsmd.getColumnLabel(i);
+			
 			switch(rsmd.getColumnType(i))
 			{
 			case Types.CHAR:
@@ -1516,7 +1518,8 @@ public class TableManager implements ErrorDetect
 		ResultSetMetaData rsmd = rs.getMetaData();
 		for(int i=1; i<=rsmd.getColumnCount(); i++)
 		{
-			sColumnName = rsmd.getColumnName(i);
+			//sColumnName = rsmd.getColumnName(i);
+			sColumnName = rsmd.getColumnLabel(i);
 			String sColumnNameLow = sColumnName.toLowerCase();
 			//BJU force lowercase so that we remain db independent
 			//mysql obeys case, but postgresql forces lowercase this may break object referencing 
@@ -1555,8 +1558,8 @@ public class TableManager implements ErrorDetect
 				else
 				{
 					java.util.Date dtRecord = new Date(ts.getTime());
-					JSONObject jsonDate = new JSONObject();
-
+					/*JSONObject jsonDate = new JSONObject();
+x
 					jsonDate.put("year", Util.formatDate(dtRecord, "yyyy", loc, tz));
 					jsonDate.put("month", Util.formatDate(dtRecord, "MM", loc, tz));
 					jsonDate.put("day", Util.formatDate(dtRecord, "dd", loc, tz));
@@ -1575,7 +1578,10 @@ public class TableManager implements ErrorDetect
 					json.put(sColumnNameLow + '-' +Util.SHORT_DATE_TIME, Util.formatDate(dtRecord, Util.SHORT_DATE_TIME, loc, tz));
 					json.put(sColumnNameLow + '-' +Util.LONG_DATE_TIME, Util.formatDate(dtRecord, Util.LONG_DATE_TIME, loc, tz));
 
-					json.put(sColumnNameLow, jsonDate);					
+					json.put(sColumnNameLow, jsonDate);	*/
+					//ISO format
+					String sISO = Util.formatDate(dtRecord, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", loc, tz);
+					json.put(sColumnNameLow, sISO==null?"":sISO);
 				}
 				break;
 			case Types.BLOB: 
@@ -1647,6 +1653,7 @@ public class TableManager implements ErrorDetect
 			{
 			case DocumentItem.ITEM_TYPE_DATE:
 				java.util.Date dtRecord = di.getDateValue();
+				/*
 				JSONObject jsonDate = new JSONObject();
 
 				jsonDate.put("year", Util.formatDate(dtRecord, "yyyy", loc, tz));
@@ -1668,7 +1675,11 @@ public class TableManager implements ErrorDetect
 				json.put(sColumnNameLow + '-' +Util.SHORT_DATE_TIME, Util.formatDate(dtRecord, Util.SHORT_DATE_TIME, loc, tz));
 				json.put(sColumnNameLow + '-' +Util.LONG_DATE_TIME, Util.formatDate(dtRecord, Util.LONG_DATE_TIME, loc, tz));
 
-				json.put(sColumnNameLow, jsonDate);									
+				json.put(sColumnNameLow, jsonDate);
+				*/
+				//ISO format
+				String sISO = Util.formatDate(dtRecord, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", loc, tz);
+				json.put(sColumnNameLow, sISO==null?"":sISO);
 				break;
 			case DocumentItem.ITEM_TYPE_NUMERIC:
 				json.put(sColumnNameLow, di.getNumericValue());
@@ -1726,7 +1737,8 @@ public class TableManager implements ErrorDetect
 		ResultSetMetaData rsmd = rs.getMetaData();
 		for(int i=1; i<=rsmd.getColumnCount(); i++)
 		{
-			sColumnName = rsmd.getColumnName(i);
+			//sColumnName = rsmd.getColumnName(i);
+			sColumnName = rsmd.getColumnLabel(i);
 			//BJU force lowercase so that we remain db independent
 			//mysql obeys case, but postgresql forces lowercase this breaks xsl when 
 			//we render

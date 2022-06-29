@@ -195,7 +195,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//System.out.println(request_id + " constructor()" );
 		m_sSystemHostName = szHostName;
 		m_bAllowByteRangeServing = m_http_server.serverAllowsByteServing();
-		
+
 		m_bShouldDisableBasicAuth = m_http_server.shouldDisableBasicAuth();
 	}
 
@@ -1988,6 +1988,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		String sEncoding = puakma.util.Util.getMIMELine(extra_headers, "Content-Encoding"); 
 		if(sEncoding==null && http_response_body!=null && http_response_body.length>0  && shouldGZipOutput(content_type) )
 		{
+			//m_pSystem.doDebug(0, "GZipping output for: " + m_http_request_line, this);
 			extra_headers.add("Content-Encoding: gzip");
 			float fBefore = http_response_body.length;          
 			http_response_body = puakma.util.Util.gzipBuffer(http_response_body);
@@ -2423,12 +2424,25 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	/**
 	 * send some bytes straight to the client
 	 */
+	public void streamToClient(byte[] buf, boolean bFlush) throws IOException
+	{
+		if(buf!=null)
+		{
+			m_os.write(buf);
+			m_http_server.updateBytesServed(buf.length);
+		}
+		if(bFlush) m_os.flush(); //expensive, but required for small http replies :-(
+	}
+
+	/**
+	 * Use streamToClient(buf, bool);
+	 * @param buf
+	 * @throws IOException
+	 */
+	@Deprecated 
 	public void streamToClient(byte[] buf) throws IOException
 	{
-		if(buf==null) return;            
-		m_os.write(buf);     
-		m_os.flush(); //expensive, but required for small http replies :-(
-		m_http_server.updateBytesServed(buf.length);
+		streamToClient(buf, true);	
 	}
 
 	/**
@@ -3069,6 +3083,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	public boolean shouldGZipOutput(String sContentType)
 	{
+		//m_pSystem.doDebug(0, "shouldGZipOutput() ["+sContentType + "] " + m_http_request_line, this);
 		if(sContentType==null || sContentType.length()==0 || !m_http_server.shouldGZipOutput())  return false;
 
 		//if the content-type is split over multiple lines or has crap appended
