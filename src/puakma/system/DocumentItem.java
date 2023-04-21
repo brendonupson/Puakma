@@ -50,6 +50,7 @@ public class DocumentItem implements Cloneable
 	public static final int ITEM_TYPE_NUMERIC = 7;
 	public static final int ITEM_TYPE_INTEGER = 8;
 	public static final int ITEM_TYPE_OBJECT = 9;
+	public static final int ITEM_TYPE_JSON = 10;
 
 	protected Document m_docParent;
 	protected String m_sName;
@@ -348,6 +349,7 @@ public class DocumentItem implements Cloneable
 	private boolean shouldDoStringConvert()
 	{
 		if(m_iType==ITEM_TYPE_STRING) return true;
+		if(m_iType==ITEM_TYPE_JSON) return true;
 		if(m_iType==ITEM_TYPE_FILE) return true;
 
 		return false;
@@ -430,7 +432,7 @@ public class DocumentItem implements Cloneable
 		double dReturn;
 
 		// check if we can convert these types to numeric
-		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_RICH)
+		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_RICH || m_iType==ITEM_TYPE_JSON)
 		{
 			return 0;
 		}
@@ -468,7 +470,7 @@ public class DocumentItem implements Cloneable
 	public long getIntegerValue()
 	{
 		// check if we can convert these types to numeric
-		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_MULTI || m_iType==ITEM_TYPE_RICH)
+		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_MULTI || m_iType==ITEM_TYPE_RICH || m_iType==ITEM_TYPE_JSON)
 		{
 			return 0;
 		}
@@ -486,7 +488,7 @@ public class DocumentItem implements Cloneable
 		SimpleDateFormat sdf = new SimpleDateFormat();
 
 		// check if we can convert this type to numeric
-		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_MULTI || m_iType==ITEM_TYPE_RICH)
+		if(m_iType==ITEM_TYPE_BUFFER || m_iType==ITEM_TYPE_MULTI || m_iType==ITEM_TYPE_RICH || m_iType==ITEM_TYPE_JSON)
 		{
 			return null;
 		}

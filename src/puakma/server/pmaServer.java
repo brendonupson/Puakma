@@ -34,6 +34,7 @@ import puakma.error.pmaLog;
 import puakma.system.SystemContext;
 import puakma.system.pmaSessionCleaner;
 import puakma.system.pmaSystem;
+import puakma.system.pmaTempFileCleaner;
 
 /**
  * This is the main Application server start point
@@ -132,14 +133,19 @@ public class pmaServer implements ErrorDetect,Runnable
 		//still some issues if started from a terminal then terminal is quit
 
 		loadAddIns();
-		pmaSessionCleaner pSessCleaner = new pmaSessionCleaner(this, m_pSystem);
-		pSessCleaner.start();
+		pmaSessionCleaner sesssionCleaner = new pmaSessionCleaner(this, m_pSystem);
+		pmaTempFileCleaner tempFileCleaner = new pmaTempFileCleaner(this, m_pSystem);
+		sesssionCleaner.start();
+		tempFileCleaner.start();
 
 		while(m_pSystem.isSystemRunning())
 		{
 			try{Thread.sleep(10000);}catch(Exception exInt){ System.err.println(exInt.toString()); m_pSystem.stopSystem(); }
 			cleanAddInList();
 		}
+		if(sesssionCleaner.isAlive()) sesssionCleaner.interrupt();
+		if(tempFileCleaner.isAlive()) tempFileCleaner.interrupt();
+		
 		unloadAddIn("", true);
 		waitForAddInsToQuit();
 		System.err.println( "---------------- SERVER SHUTDOWN ---------------- ");

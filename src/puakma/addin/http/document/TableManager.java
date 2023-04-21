@@ -278,6 +278,20 @@ public class TableManager implements ErrorDetect
 		try{ dblValue = Double.parseDouble(sFieldValue); }catch(Exception e){}
 		m_docData.replaceItem(sFieldName, dblValue);
 	}
+	
+	public void setFieldJSON(String sFieldName, String sFieldValue)
+	{     
+		m_docData.removeItem(sFieldName);
+		DocumentItem di = new DocumentItem(m_docData, sFieldName, sFieldValue);
+		di.setType(DocumentItem.ITEM_TYPE_JSON);
+		
+		//setFieldNull(sFieldName, DocumentItem.ITEM_TYPE_BUFFER);
+	}
+	
+	public void setField(String sFieldName, JSONObject json)
+	{
+		setFieldJSON(sFieldName, json==null ? null : json.toString());
+	}
 
 	public void setField(String sFieldName, String sFieldValue)
 	{
@@ -530,19 +544,22 @@ public class TableManager implements ErrorDetect
 		while(en.hasMoreElements())
 		{
 			DocumentItem di = (DocumentItem)en.nextElement();
-			String sColName = escapeReservedWordColumn(di.getName());			
+			String sColName = escapeReservedWordColumn(di.getName());	
+			String sValuePlaceHolder = di.getType()==DocumentItem.ITEM_TYPE_JSON ? "to_json(?::json)" : "?"; //this is for postgresql...
 			if(bUpdate)
 			{
 				if(sbMoreSQL.length()==0)
 				{
 					sbMoreSQL.append(sColName);
-					sbMoreSQL.append("=?");
+					//sbMoreSQL.append("=?");
+					sbMoreSQL.append("=" + sValuePlaceHolder);
 				}
 				else
 				{
 					sbMoreSQL.append(',');
 					sbMoreSQL.append(sColName);
-					sbMoreSQL.append("=?");
+					//sbMoreSQL.append("=?");
+					sbMoreSQL.append("=" + sValuePlaceHolder);
 				}
 			}
 			else
@@ -556,9 +573,11 @@ public class TableManager implements ErrorDetect
 				}
 
 				if(sbValuesSQL.length()==0)
-					sbValuesSQL.append('?');
+					//sbValuesSQL.append('?');
+					sbValuesSQL.append(sValuePlaceHolder);
 				else
-					sbValuesSQL.append(",?");
+					//sbValuesSQL.append(",?");
+					sbValuesSQL.append(","+sValuePlaceHolder);
 			}
 
 		}//while
@@ -863,6 +882,10 @@ public class TableManager implements ErrorDetect
 				case DocumentItem.ITEM_TYPE_FILE:
 				case DocumentItem.ITEM_TYPE_BUFFER:
 					new DocumentItem(m_docData, diExist.getName(),  diExist.getValue());
+					break;
+				case DocumentItem.ITEM_TYPE_JSON:
+					DocumentItem diJson = new DocumentItem(m_docData, diExist.getName(),  diExist.getStringValue());
+					diJson.setType(DocumentItem.ITEM_TYPE_JSON);
 					break;
 				case DocumentItem.ITEM_TYPE_STRING:
 				default:
