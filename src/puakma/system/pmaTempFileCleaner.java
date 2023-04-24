@@ -79,7 +79,7 @@ public class pmaTempFileCleaner extends Thread
 					}
 				}
 			}
-			if(iDeleteCount>0) m_pSystem.pErr.doInformation(iDeleteCount + " temp files removed", m_pParent);
+			if(iDeleteCount>0) m_pSystem.pErr.doInformation("pmaServer.TempFilesDeleted", new String[]{ String.valueOf(iDeleteCount)}, m_pParent);
 		}
 		catch(Exception e)
 		{

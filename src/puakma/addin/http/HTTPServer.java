@@ -103,6 +103,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 	private String m_sHTTPSOAPServer="";
 	private int m_iHTTPMaxPerConnection=5;
 	private int m_iHTTPMaxExpirySeconds=3600; //1hour
+	private int m_iHTTPSlowActionMS = 0; //log actions that take longer than this
 	private boolean m_bGZipOutput=false;
 	private int m_iMaxURI=512; //default to 512 bytes
 	private NumberFormat m_nfWhole = NumberFormat.getIntegerInstance();
@@ -220,6 +221,10 @@ public class HTTPServer extends Thread implements ErrorDetect
 		try{ m_iHTTPMaxExpirySeconds = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxExpirySeconds")); }
 		catch(Exception r){}
 
+		try{ m_iHTTPSlowActionMS = Integer.parseInt(m_pSystem.getSystemProperty("HTTPSlowActionMS")); }
+		catch(Exception r){}
+
+		
 
 		try
 		{
@@ -917,6 +922,11 @@ public class HTTPServer extends Thread implements ErrorDetect
 	public int getMaxURI()
 	{
 		return m_iMaxURI;
+	}
+	
+	public int getSlowActionTimeLimitMS()
+	{
+		return m_iHTTPSlowActionMS;
 	}
 
 	public String getPuakmaFileExt()

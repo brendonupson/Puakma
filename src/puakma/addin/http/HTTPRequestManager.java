@@ -1477,7 +1477,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 							m_pSystem.doDebug(0, "Running SaveAction: " + sActionClass, this);
 					}  
 
-					//long lStart = System.currentTimeMillis();
+					long lStart = System.currentTimeMillis();
 					//BJU. Made shared so that classloader references are maintained.
 					//ActionClassLoader aLoader= new ActionClassLoader(this, m_pSystem, m_pSession.getSessionContext(), doc.rPath.Group, doc.rPath.Application, szActionClass);            
 
@@ -1504,7 +1504,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					actionReturn.HasStreamed = m_action.hasStreamed();
 					actionReturn.bBuffer = m_action.getByteBuffer();
 					actionReturn.ContentType = m_action.getContentType(); 
-					//long lEnd = System.currentTimeMillis() - lStart;
+					long lActionTimeMS = System.currentTimeMillis() - lStart;
+					
+					if(lActionTimeMS>m_http_server.getSlowActionTimeLimitMS())
+					{
+						m_pSystem.doError("HTTPRequest.SlowAction", new String[]{sActionClass, String.valueOf(lActionTimeMS), String.valueOf(m_http_server.getSlowActionTimeLimitMS())}, this);
+					}
+					
 					//System.out.println(szActionClass + " took " + lEnd + "ms");
 				}
 			}
