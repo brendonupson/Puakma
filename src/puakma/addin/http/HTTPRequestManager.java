@@ -1506,7 +1506,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					actionReturn.ContentType = m_action.getContentType(); 
 					long lActionTimeMS = System.currentTimeMillis() - lStart;
 					
-					if(lActionTimeMS>m_http_server.getSlowActionTimeLimitMS())
+					if(m_http_server.getSlowActionTimeLimitMS()>0 && lActionTimeMS>m_http_server.getSlowActionTimeLimitMS())
 					{
 						m_pSystem.doError("HTTPRequest.SlowAction", new String[]{sActionClass, doc.rPath.getFullPath(), String.valueOf(lActionTimeMS), String.valueOf(m_http_server.getSlowActionTimeLimitMS())}, this);
 					}
