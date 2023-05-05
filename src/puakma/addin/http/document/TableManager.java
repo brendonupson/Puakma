@@ -22,6 +22,7 @@ package puakma.addin.http.document;
 
 import java.io.ByteArrayInputStream;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -278,16 +279,16 @@ public class TableManager implements ErrorDetect
 		try{ dblValue = Double.parseDouble(sFieldValue); }catch(Exception e){}
 		m_docData.replaceItem(sFieldName, dblValue);
 	}
-	
+
 	public void setFieldJSON(String sFieldName, String sFieldValue)
 	{     
 		m_docData.removeItem(sFieldName);
 		DocumentItem di = new DocumentItem(m_docData, sFieldName, sFieldValue);
 		di.setType(DocumentItem.ITEM_TYPE_JSON);
-		
+
 		//setFieldNull(sFieldName, DocumentItem.ITEM_TYPE_BUFFER);
 	}
-	
+
 	public void setField(String sFieldName, JSONObject json)
 	{
 		setFieldJSON(sFieldName, json==null ? null : json.toString());
@@ -499,7 +500,17 @@ public class TableManager implements ErrorDetect
 	 */
 	public boolean insertRow()
 	{
-		return saveRow("", false);
+		return saveRowInternal("", false, null);
+	}
+
+	/**
+	 * Ask for a specific field for the generated key
+	 * @param sGeneratedKeyFieldName
+	 * @return
+	 */
+	public boolean insertRow(String sGeneratedKeyFieldName)
+	{
+		return saveRowInternal("", false, sGeneratedKeyFieldName);
 	}
 
 
@@ -510,17 +521,27 @@ public class TableManager implements ErrorDetect
 	 */
 	public boolean updateRow(String sWhereClause)
 	{
-		return saveRow(sWhereClause, true);
+		return saveRowInternal(sWhereClause, true, null);
 	}
 
-
+	/**
+	 * 
+	 * @param sWhereClause
+	 * @param bUpdate
+	 * @return
+	 * @deprecated
+	 */	
+	public boolean saveRow(String sWhereClause, boolean bUpdate)
+	{
+		return saveRowInternal(sWhereClause, bUpdate, null);
+	}
 
 	/**
 	 * Applies the data in m_docData to the table
 	 * @param sWhereClause ("WHERE X=3" etc), bUpdate (false does an insert, true does an update)
 	 * @return true if the row was saved successfully
 	 */
-	public boolean saveRow(String sWhereClause, boolean bUpdate)
+	private boolean saveRowInternal(String sWhereClause, boolean bUpdate, String sGeneratedKeyFieldName)
 	{
 		StringBuilder sbSQL = new StringBuilder(256);
 		StringBuilder sbMoreSQL=new StringBuilder(256), sbValuesSQL=new StringBuilder(256);
@@ -657,12 +678,12 @@ public class TableManager implements ErrorDetect
 			if(!bUpdate) //if an insert
 			{     
 				try{
-					ResultSet rsKeys = prepStmt.getGeneratedKeys();
-					if(rsKeys.next()) m_lLastInsertID = rsKeys.getLong(1);
-					rsKeys.close();
-				}catch(Exception y){} //don't log this, not all db's support getGeneratedKeys()
+					setLastInsertID(prepStmt, sGeneratedKeyFieldName);					
+				}catch(Exception y)
+				{
+					m_sysCtx.doError("TableManager.GeneratedKeysError", new String[]{y.toString()}, this);
+				} //don't log this, not all db's support getGeneratedKeys()
 			}
-
 
 		}
 		catch(Exception e)
@@ -678,6 +699,85 @@ public class TableManager implements ErrorDetect
 			releaseConnection(cx);
 		}
 		return bSavedOK;
+	}
+
+	private void setLastInsertID(PreparedStatement prepStmt, String sGeneratedKeyFieldName) throws Exception 
+	{
+		m_lLastInsertID = -1; //reset
+
+		ResultSet rsKeys = prepStmt.getGeneratedKeys();
+		if(rsKeys!=null)
+		{							
+			rsKeys.next();
+			ResultSetMetaData rsmd = rsKeys.getMetaData();
+			//if there's many columns and we haven't specified a key, use the primary key column
+			//Not recommended: Programmer should be specifying the column in t.insertRow("MyAutoGenColumnName")
+			if(rsmd.getColumnCount()>1 && (sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0))
+			{
+				sGeneratedKeyFieldName = getFirstPrimaryKeyColumnName(prepStmt); 
+			}
+			int column = getResultSetColumn(rsKeys, rsmd, sGeneratedKeyFieldName);
+			if(column<1) column = 1;
+			m_lLastInsertID = rsKeys.getLong(column);
+		}
+		rsKeys.close();
+
+	}
+
+	private String getFirstPrimaryKeyColumnName(PreparedStatement prepStmt) 
+	{		
+		ResultSet tables = null;
+		ResultSet primaryKeys = null;
+		try
+		{
+			DatabaseMetaData dbmd = prepStmt.getConnection().getMetaData();
+			tables = dbmd.getTables(null, null, "%", new String[] { "TABLE" }); //somewhat inefficient, gets all the tables. Case sensitivity
+			while (tables.next()) 
+			{
+				String catalog = tables.getString("TABLE_CAT");
+				String schema = tables.getString("TABLE_SCHEM");
+				String tableName = tables.getString("TABLE_NAME");
+				if(tableName.equalsIgnoreCase(m_sTableName))
+				{
+					//System.out.println("Table: " + tableName);
+					primaryKeys = dbmd.getPrimaryKeys(catalog, schema, tableName); 
+					if (primaryKeys.next()) 
+					{
+						//System.out.println("Primary key: " + primaryKeys.getString("COLUMN_NAME"));
+						return primaryKeys.getString("COLUMN_NAME");
+					}
+				}
+			}
+			// similar for exportedKeys
+		}
+		catch(Exception e)
+		{
+			System.err.println("getPrimaryKeyColumnName() " + e.toString());
+		}
+		finally
+		{
+			Util.closeJDBC(tables);
+			Util.closeJDBC(primaryKeys);
+		}
+		return null;
+	}
+
+	private static int getResultSetColumn(ResultSet rs, ResultSetMetaData rsmd, String sColumnName) 
+	{
+		if(sColumnName==null || sColumnName.length()==0) return -1; 
+		try
+		{			
+			for(int column=1; column<=rsmd.getColumnCount(); column++)
+			{
+				String sLabel = rsmd.getColumnLabel(column);
+				if(sLabel==null) sLabel = "";
+				//we are dealing with a single table insert, so make case insensitive
+				if(sColumnName.equalsIgnoreCase(sLabel)) return column;
+			}
+			//return rs.findColumn(sColumnName); //Warning: case sensitive https://bugs.mysql.com/bug.php?id=96398
+		}
+		catch(Exception e) {}
+		return -1;
 	}
 
 	/**
@@ -1181,7 +1281,7 @@ public class TableManager implements ErrorDetect
 		{
 			//sColumnName = rsmd.getColumnName(i);
 			sColumnName = rsmd.getColumnLabel(i);
-			
+
 			switch(rsmd.getColumnType(i))
 			{
 			case Types.CHAR:
@@ -1699,7 +1799,7 @@ x
 				json.put(sColumnNameLow + '-' +Util.LONG_DATE_TIME, Util.formatDate(dtRecord, Util.LONG_DATE_TIME, loc, tz));
 
 				json.put(sColumnNameLow, jsonDate);
-				*/
+				 */
 				//ISO format
 				String sISO = Util.formatDate(dtRecord, "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", loc, tz);
 				json.put(sColumnNameLow, sISO==null?"":sISO);
