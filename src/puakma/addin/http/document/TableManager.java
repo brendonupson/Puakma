@@ -682,6 +682,7 @@ public class TableManager implements ErrorDetect
 				}catch(Exception y)
 				{
 					m_sysCtx.doError("TableManager.GeneratedKeysError", new String[]{y.toString()}, this);
+					Util.logStackTrace(y, m_sysCtx, -1);
 				} //don't log this, not all db's support getGeneratedKeys()
 			}
 
@@ -708,20 +709,22 @@ public class TableManager implements ErrorDetect
 		ResultSet rsKeys = prepStmt.getGeneratedKeys();
 		if(rsKeys!=null)
 		{							
-			rsKeys.next();
-			ResultSetMetaData rsmd = rsKeys.getMetaData();
-			//if there's many columns and we haven't specified a key, use the primary key column
-			//Not recommended: Programmer should be specifying the column in t.insertRow("MyAutoGenColumnName")
-			if(rsmd.getColumnCount()>1 && (sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0))
+			if(rsKeys.next())
 			{
-				sGeneratedKeyFieldName = getFirstPrimaryKeyColumnName(prepStmt); 
+				ResultSetMetaData rsmd = rsKeys.getMetaData();
+				//if there's many columns and we haven't specified a key, use the primary key column
+				//Not recommended: Programmer should be specifying the column in t.insertRow("MyAutoGenColumnName")
+				if(rsmd.getColumnCount()>1 && (sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0))
+				{
+					sGeneratedKeyFieldName = getFirstPrimaryKeyColumnName(prepStmt); 
+				}
+				int column = getResultSetColumn(rsKeys, rsmd, sGeneratedKeyFieldName);
+				if(column<1) column = 1;
+				m_lLastInsertID = rsKeys.getLong(column);
 			}
-			int column = getResultSetColumn(rsKeys, rsmd, sGeneratedKeyFieldName);
-			if(column<1) column = 1;
-			m_lLastInsertID = rsKeys.getLong(column);
+			rsKeys.close();
 		}
-		rsKeys.close();
-
+		
 	}
 
 	private String getFirstPrimaryKeyColumnName(PreparedStatement prepStmt) 
