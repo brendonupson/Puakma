@@ -712,19 +712,30 @@ public class TableManager implements ErrorDetect
 			if(rsKeys.next())
 			{
 				ResultSetMetaData rsmd = rsKeys.getMetaData();
+				int iColumnCount = rsmd.getColumnCount();
 				//if there's many columns and we haven't specified a key, use the primary key column
 				//Not recommended: Programmer should be specifying the column in t.insertRow("MyAutoGenColumnName")
-				if(rsmd.getColumnCount()>1 && (sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0))
+				if(iColumnCount>0)
 				{
-					sGeneratedKeyFieldName = getFirstPrimaryKeyColumnName(prepStmt); 
+					if(iColumnCount==1) //mysql - but beware! postgres single column tables with no primary key may throw an error here
+					{
+						m_lLastInsertID = rsKeys.getLong(1);
+					}
+					else
+					{
+						//if(iColumnCount>1 && sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0)
+						if(sGeneratedKeyFieldName==null || sGeneratedKeyFieldName.length()==0)
+						{
+							sGeneratedKeyFieldName = getFirstPrimaryKeyColumnName(prepStmt); 
+						}
+						int column = getResultSetColumn(rsKeys, rsmd, sGeneratedKeyFieldName);
+						if(column>0) m_lLastInsertID = rsKeys.getLong(column);	
+					}
 				}
-				int column = getResultSetColumn(rsKeys, rsmd, sGeneratedKeyFieldName);
-				if(column<1) column = 1;
-				m_lLastInsertID = rsKeys.getLong(column);
 			}
 			rsKeys.close();
 		}
-		
+
 	}
 
 	private String getFirstPrimaryKeyColumnName(PreparedStatement prepStmt) 
