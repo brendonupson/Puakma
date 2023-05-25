@@ -526,6 +526,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				doPost(m_sInboundPath);
 				bRequestProcessed=true;
 			}
+			
+			//update in case the action did some login
+			m_pStatus.setStatus(m_pSession.getUserNameAbbreviated() + ' ' + m_sInboundPath);
 
 			if(!bRequestProcessed) //request not supported eg SEARCH
 			{     
