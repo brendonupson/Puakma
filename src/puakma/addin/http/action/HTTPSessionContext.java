@@ -65,8 +65,8 @@ public class HTTPSessionContext implements ErrorDetect
 	private SessionContext m_SessCtx;
 	private RequestPath m_rPath;
 	private HTTPRequestManager m_HTTPRM;
-	private int m_iDataConnGetCount;
-	private int m_iDataConnReleaseCount;
+	//private int m_iDataConnGetCount;
+	//private int m_iDataConnReleaseCount;
 	private Hashtable m_htConnections = new Hashtable();
 
 	/* Create a new instance of HTTPSessionContext used by the HTTP stack
@@ -479,10 +479,13 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public Connection getDataConnection(String sConnectionName) throws Exception
 	{
-		m_iDataConnGetCount++;
+		//m_iDataConnGetCount++;
 		TornadoServerInstance tsi = TornadoServer.getInstance();
 		TornadoApplication ta = tsi.getTornadoApplication(m_rPath.getPathToApplication());
-		return ta.getDataConnection(sConnectionName);
+		//return ta.getDataConnection(sConnectionName);
+		Connection cx = ta.getDataConnection(sConnectionName);
+		m_htConnections.put(cx, cx);
+		return cx;
 	}
 
 
@@ -508,7 +511,7 @@ public class HTTPSessionContext implements ErrorDetect
 		if(ta.releaseDataConnection(cx)) 
 		{
 			m_htConnections.remove(cx);
-			m_iDataConnReleaseCount++;
+			//m_iDataConnReleaseCount++;
 			return;
 		}		
 	}
@@ -523,7 +526,7 @@ public class HTTPSessionContext implements ErrorDetect
 		if(ta.releaseDataConnection(cx)) 
 		{
 			m_htConnections.remove(cx);
-			m_iDataConnReleaseCount++;
+			//m_iDataConnReleaseCount++;
 			return;
 		}
 
@@ -534,7 +537,12 @@ public class HTTPSessionContext implements ErrorDetect
 		while(it.hasNext())
 		{
 			ta = (TornadoApplication) it.next();
-			if(ta.releaseDataConnection(cx)) return;
+			if(ta.releaseDataConnection(cx)) 
+			{
+				m_htConnections.remove(cx);
+				//m_iDataConnReleaseCount++;
+				return;
+			}
 		}
 
 		return;

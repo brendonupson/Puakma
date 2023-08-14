@@ -817,35 +817,35 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private void setUpCookies(HTMLDocument doc)
 	{
-		String szPartial;
-		String szCookie = Util.getMIMELine(m_environment_lines, "Cookie");
+		String sPartial;
+		String sCookie = Util.getMIMELine(m_environment_lines, "Cookie");
 		//System.out.println(szCookie);
 		//szCookie += "; name2=value2; name3=value3";
 
-		if(szCookie==null || doc==null) return; //cookie will be null on first connect
+		if(sCookie==null || doc==null) return; //cookie will be null on first connect
 		int iPos, iEnd;
-		iPos = szCookie.indexOf(';');
-		if(iPos<0 && szCookie.length()>0) iPos = szCookie.length();
+		iPos = sCookie.indexOf(';');
+		if(iPos<0 && sCookie.length()>0) iPos = sCookie.length();
 		while(iPos>=0)
 		{
 			if(iPos==0)
 			{
-				iEnd = szCookie.length();
-				szPartial = szCookie.substring(iPos, iEnd);
+				iEnd = sCookie.length();
+				sPartial = sCookie.substring(iPos, iEnd);
 			}
 			else
 			{
 				iEnd = iPos+1;
-				if(iEnd>szCookie.length()) iEnd = szCookie.length();
-				szPartial = szCookie.substring(0, iPos);
+				if(iEnd>sCookie.length()) iEnd = sCookie.length();
+				sPartial = sCookie.substring(0, iPos);
 			}
 
-			szCookie = szCookie.substring(iEnd, szCookie.length());
-			Cookie c = new Cookie(szPartial);
+			sCookie = sCookie.substring(iEnd, sCookie.length());
+			Cookie c = new Cookie(sPartial);
 			//if not the session cookie, add it...
 			if(!c.getName().equalsIgnoreCase(HTTPServer.SESSIONID_LABEL)) doc.addCookie(c);
-			iPos = szCookie.indexOf(';');
-			if(iPos<0 && szCookie.length()>0) iPos = 0;
+			iPos = sCookie.indexOf(';');
+			if(iPos<0 && sCookie.length()>0) iPos = 0;
 		}
 	}
 
