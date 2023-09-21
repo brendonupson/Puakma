@@ -81,7 +81,8 @@ public class HTTP extends pmaAddIn
 	private long m_lMaxUploadBytes = -1;
 	private boolean m_bMinifyFileSystemJS=false;
 	private boolean m_bNoReverseDNS = false;
-	private String[] m_sAllowMethods = new String[] {"PUT","DELETE"}; //defaults
+	//private String[] m_sAllowMethods = new String[] {"PUT","DELETE"}; //defaults
+	private String[] m_sAllowMethods = new String[] {"CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "TRACE"}; //defaults
 
 
 	/**

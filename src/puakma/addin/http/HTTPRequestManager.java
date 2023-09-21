@@ -2591,11 +2591,19 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		try
 		{
 			m_sock.close();
+		}
+		catch(IOException io1)
+		{
+			//m_pSystem.doError("HTTPRequest.CloseInput", new String[]{io1.getMessage()}, this);
+		}
+		
+		try
+		{
 			m_is.close();
 		}
 		catch(IOException io1)
 		{
-			m_pSystem.doError("HTTPRequest.CloseInput", new String[]{io1.getMessage()}, this);
+			//m_pSystem.doError("HTTPRequest.CloseInput", new String[]{io1.getMessage()}, this);
 		}
 
 		try
@@ -2604,7 +2612,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		}
 		catch(IOException io2)
 		{
-			m_pSystem.doError("HTTPRequest.CloseOutput", new String[]{io2.getMessage()}, this);
+			//m_pSystem.doError("HTTPRequest.CloseOutput", new String[]{io2.getMessage()}, this);
 		}
 	}
 

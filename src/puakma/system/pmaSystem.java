@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.0.30";
-	private final int PUAKMA_BUILD=1081;
-	private final String PUAKMA_BUILD_DATE="11 Aug 2023"; 
+	private final String PUAKMA_VERSION="6.0.31";
+	private final int PUAKMA_BUILD=1082;
+	private final String PUAKMA_BUILD_DATE="122 Sep 2023"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
@@ -1066,15 +1066,14 @@ public class pmaSystem implements ErrorDetect
 	private void loadAuthenticators()
 	{
 		pErr.doDebug(pmaLog.DEBUGLEVEL_FULL, "loadAuthenticators()", this);
-		String szAuthList=getConfigProperty("Authenticators");
-		String szAuthName;
+		String szAuthList=getConfigProperty("Authenticators");		
 		if(szAuthList != null)
 		{
 			StringTokenizer stk= new StringTokenizer(szAuthList, ",", false);
 			while (stk.hasMoreTokens())
 			{
-				szAuthName = stk.nextToken();
-				loadAuthenticator(szAuthName);
+				String szAuthenticatorClassName = stk.nextToken();
+				loadAuthenticator(szAuthenticatorClassName);
 			}//end while
 		}//end if
 	}
@@ -1084,42 +1083,56 @@ public class pmaSystem implements ErrorDetect
 	 * Load a single authenticator. Will be useful later when we want to dynamically
 	 * load/unload these
 	 */
-	public void loadAuthenticator(String szAuthName)
+	public void loadAuthenticator(String szAuthenticatorClassName)
 	{
 		pErr.doDebug(pmaLog.DEBUGLEVEL_FULL, "loadAuthenticator()", this);
-		pmaAuthenticator pAuth;
+		//pmaAuthenticator pAuth;
 
-		if(szAuthName==null) return;
+		if(szAuthenticatorClassName==null || szAuthenticatorClassName.length()==0) return;
+		
+		String sShowLoginErrors = getConfigProperty("AuthenticatorsShowLoginErrors");
+		boolean bShowLoginErrors = Util.toInteger(sShowLoginErrors)==1;
+		
 		try
 		{
-			pAuth = (pmaAuthenticator)Class.forName(szAuthName).newInstance();
+			pmaAuthenticator pAuth = (pmaAuthenticator)Class.forName(szAuthenticatorClassName).newInstance();
+			if(sShowLoginErrors!=null) pAuth.m_bShowLoginErrors = bShowLoginErrors; //if it's set, use it
 			pAuth.init(m_sysCtx);
 			m_vAuthenticators.addElement(pAuth);
-			pErr.doInformation("pmaSystem.AuthLoad", new String[]{szAuthName}, this);
+			pErr.doInformation("pmaSystem.AuthLoad", new String[]{szAuthenticatorClassName}, this);
 		}
 		catch(Exception e)
 		{
-			pErr.doError("pmaSystem.AuthError", new String[]{szAuthName, e.toString()}, this);
+			pErr.doError("pmaSystem.AuthError", new String[]{szAuthenticatorClassName, e.toString()}, this);
 		}
 	}
 
 	/*
 	 * Unloads an Authenticator. the name is the full package & class name
 	 */
-	public void unloadAuthenticator(String szAuthName, boolean bUnloadAll)
+	public void unloadAuthenticator(String szAuthenticatorClassName, boolean bUnloadAll)
 	{
 		pErr.doDebug(pmaLog.DEBUGLEVEL_FULL, "unloadAuthenticator()", this);
-		pmaAuthenticator pAuth;
+		//pmaAuthenticator pAuth;
+		
+		if(bUnloadAll)
+		{
+			m_vAuthenticators.clear();
+			pErr.doInformation("pmaSystem.AuthUnLoad", new String[]{"ALL"}, this);
+			return;
+		}
 
-		if(szAuthName==null) return;
+		if(szAuthenticatorClassName==null || szAuthenticatorClassName.length()==0) return;
+		
 		for(int i=0; i<m_vAuthenticators.size(); i++)
 		{
-			pAuth = (pmaAuthenticator)m_vAuthenticators.elementAt(i);
+			pmaAuthenticator pAuth = (pmaAuthenticator)m_vAuthenticators.elementAt(i);
 			String szName = pAuth.getClass().getName();
-			if(szName.equals(szAuthName) || bUnloadAll)
+			if(szName.equals(szAuthenticatorClassName) || bUnloadAll)
 			{
 				m_vAuthenticators.removeElementAt(i);
 				pErr.doInformation("pmaSystem.AuthUnLoad", new String[]{szName}, this);
+				break;
 			}
 		}
 	}

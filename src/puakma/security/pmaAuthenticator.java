@@ -36,6 +36,7 @@ public class pmaAuthenticator implements ErrorDetect
 {
 
   protected SystemContext SysCtx; //Golding use a custom authenticator, so if you change this it will break
+  public boolean m_bShowLoginErrors = true;
 
   public pmaAuthenticator() {}
 

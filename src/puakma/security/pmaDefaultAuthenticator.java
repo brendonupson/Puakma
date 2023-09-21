@@ -44,6 +44,10 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 	{
 		LoginResult loginResult = new LoginResult();
 
+		//avoid buffer overflow login attempts
+		if(sUserName==null || sUserName.length()==0 || sUserName.length()>120) return loginResult;
+				
+		
 		String sEmailWhere = "";
 		String sLoginName = sUserName.toLowerCase();
 		MailAddress ma = new MailAddress(sLoginName);
@@ -52,7 +56,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 			sEmailWhere = " OR LOWER(EmailAddress)=?";
 		}
 		//avoid buffer overflow login attempts
-		if(sLoginName==null || sLoginName.length()>120) return loginResult;
+		//if(sLoginName==null || sLoginName.length()>120) return loginResult;
 		//String szResult;
 		Connection cx=null;
 
@@ -70,7 +74,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 			if(rs.next()) iFound = rs.getInt(1);
 			if(iFound>1)
 			{
-				SysCtx.doError("pmaDefaultAuthenticator.LoginTooMany", new String[]{sLoginName}, this);
+				if(m_bShowLoginErrors) SysCtx.doError("pmaDefaultAuthenticator.LoginTooMany", new String[]{sLoginName}, this);
 				loginResult.ReturnCode=LoginResult.LOGIN_RESULT_TOO_MANY_MATCHES;
 				rs.close();
 				prepStmt.close();
@@ -79,7 +83,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 			}
 			if(iFound<1)
 			{
-				SysCtx.doError("pmaDefaultAuthenticator.LoginNotFound", new String[]{sLoginName}, this);
+				if(m_bShowLoginErrors) SysCtx.doError("pmaDefaultAuthenticator.LoginNotFound", new String[]{sLoginName}, this);
 				loginResult.ReturnCode=LoginResult.LOGIN_RESULT_INVALID_USER;
 				rs.close();
 				prepStmt.close();
