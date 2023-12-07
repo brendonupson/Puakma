@@ -2045,6 +2045,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		File fOriginal=null;
 		File fByteServe=null;
 		ArrayList out_lines = new ArrayList();
+		
+		//FIXME When serving HUGE files, eg 18GB, dealing with an input stream causes the file to be copied before streaming
+		//this is a large performance penalty. This method should be passed the file rather than InputStream.
 
 		//m_pSystem.doDebug(0, http_code_string + " " + http_code_string + " stream:"+lStreamLengthBytes + " " + m_sInboundPath, this);
 		/*
@@ -2174,7 +2177,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 						fOriginal = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_byteserve_o_", null, m_pSystem.getTempDir());
 						fOriginal.deleteOnExit();
-						sendStreamToFile(is, fOriginal);
+						sendStreamToFile(is, fOriginal); //FIXME performance issue!
 						fByteServe = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_byteserve_", null, m_pSystem.getTempDir());
 						fByteServe.deleteOnExit();
 						FileOutputStream foutBS = new FileOutputStream(fByteServe);

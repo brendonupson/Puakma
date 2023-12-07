@@ -176,18 +176,19 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		m_sBindMethod="simple";
 		m_sLDAPSearchBase="o=GoldingContractors";
 		m_sBindUserName="cn=puakma,ou=Puakma,o=goldingcontractors";
-		m_sBindPassword="Kiwi9999";
+		m_sBindPassword="zzz";
 		m_sLDAPGroupMemberAttribute="groupMembership";
 		m_sLDAPDNAttribute = "";
 		 */
 
 
 		//m_sLDAPHostConfigEntry = "ldaps://ad.golding.com.au";
-		m_sLDAPHostConfigEntry = "ldaps://10.100.104.9,ldaps://10.100.105.9";
+		m_sLDAPHostConfigEntry = "ldaps://vdcadc01.ad.golding.com.au";
 		m_sBindMethod="simple";
-		m_sLDAPSearchBase="OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
+		//m_sLDAPSearchBase="OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
+		m_sLDAPSearchBase="DC=ad,DC=golding,DC=com,DC=au";
 		m_sBindUserName="CN=SVC_PUAKMA,OU=Global Service Accounts,OU=Administration,DC=ad,DC=golding,DC=com,DC=au";
-		m_sBindPassword="`zzz";
+		m_sBindPassword="zzz";
 		m_sLDAPSocketFactory = "puakma.util.RelaxedSSLSocketFactory";
 
 	}
@@ -200,8 +201,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		System.out.println("Using: " + ldap.m_sLDAPHostConfigEntry);
 		ldap.setConnectTimeoutMS(2000);
 		long lStart = System.currentTimeMillis();
-		LoginResult lr = ldap.loginUser("usera", "zzz", "", "", "");
-
+		LoginResult lr = ldap.loginUser("SVC_ClemLimitedAccess", "zzz", "", "", "");
 
 
 		System.out.println(lr.toString()); 
@@ -210,8 +210,8 @@ public class LDAPAuthenticator extends pmaAuthenticator
 
 		//String sUserName = "CN=upsonb,OU=Users,OU=MainOffice,OU=Gladstone,OU=QLD,OU=AU,O=GoldingContractors";
 
-		String sUserName = "CN=Test User,OU=Users,OU=BNE,OU=Sites,DC=ad,DC=golding,DC=com,DC=au";
-		String sGroupName = "IT Services - 50000151"; //"PuakmaGlobalAdmin";
+		String sUserName = "CN=SVC_ClemLimitedAccess,OU=Role Based Service Accounts,OU=Administration,DC=ad,DC=golding,DC=com,DC=au";
+		String sGroupName = "DC_Limited Admin"; //"PuakmaGlobalAdmin";
 		lStart = System.currentTimeMillis();
 		boolean b = ldap.isUserInGroupPrivate(sUserName, sGroupName);
 		System.out.println(sUserName +" in group ["+sGroupName+"] = "+b);
@@ -457,7 +457,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			if(results!=null && results.hasMore())
 			{
 				bFound = true;
-				System.out.println("Search for [" + m_sUserSearchString + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
+				System.out.println("Search for [" + sLDAPSearchString + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
 				SearchResult sr = (SearchResult)results.next();
 				boolean bMoreResults = false;
 				try{ bMoreResults = results.hasMore(); }catch(NamingException ne){}
