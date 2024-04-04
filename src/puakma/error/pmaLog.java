@@ -296,7 +296,7 @@ public class pmaLog
 		{
 			try
 			{
-				cx = m_dbPool.getConnection();
+				cx = m_dbPool.getConnection();				
 				Statement Stmt = cx.createStatement();
 				Stmt.execute("DELETE FROM PMALOG");
 				Stmt.close();        

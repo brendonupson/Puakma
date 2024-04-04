@@ -92,7 +92,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		String sReply; //message sent flag
 
 		//System.out.println(Thread.currentThread().getName() + " running..." );
-		pStatus.setStatus("Writing to temp file");
+		pStatus.setStatus("Writing to temp file for message id: " + m_lMessageID);
 		writeTempFile(m_lMessageID);
 		//pSystem.pErr.doInformation("Transferring message: " + MessageID, this);
 		try
@@ -431,19 +431,20 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		byte MimeAlternateEndBoundaryBytes[] = String.valueOf("--" + MimeAlternateBoundary + "--").getBytes();
 
 		String szQuery = "SELECT * FROM MAILBODY LEFT JOIN MAILATTACHMENT ON MAILBODY.MailBodyID=MAILATTACHMENT.MailBodyID WHERE MAILBODY.MailBodyID=" + MailBodyID;
-		Statement Stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
-		ResultSet RS = Stmt.executeQuery(szQuery);
-		while(RS.next())
+		Statement stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+		stmt.setFetchSize(1);
+		ResultSet rs = stmt.executeQuery(szQuery);
+		while(rs.next())
 		{
 			if(bFirstRow)
 			{
-				String szBody = fixBareLineFeeds(RS.getString("Body")); //FIXME inject CR for bare LFs
-				String szSubject = RS.getString("Subject");
-				m_sFrom = RS.getString("Sender");
+				String szBody = fixBareLineFeeds(rs.getString("Body")); //FIXME inject CR for bare LFs
+				String szSubject = rs.getString("Subject");
+				m_sFrom = rs.getString("Sender");
 				maFrom = new MailAddress(m_sFrom);
-				String szTo = RS.getString("SendTo");
-				String szCopyTo = RS.getString("CopyTo");
-				m_sMessageSerialID = RS.getString("SerialID");
+				String szTo = rs.getString("SendTo");
+				String szCopyTo = rs.getString("CopyTo");
+				m_sMessageSerialID = rs.getString("SerialID");
 
 				//This is the header parcel
 				fout.write(formatLine("Date: ", sdf.format(new java.util.Date())));
@@ -512,12 +513,12 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 				bFirstRow = false;
 			}
 			//attachment data may be null! check first
-			RS.getLong("MailAttachmentID");
-			if(!RS.wasNull())
+			rs.getLong("MailAttachmentID");
+			if(!rs.wasNull())
 			{
-				String szType = RS.getString("ContentType");
+				String szType = rs.getString("ContentType");
 				if(szType==null || szType.length()==0) szType = "application/octet-stream";          
-				String szName = cleanFileName(RS.getString("FileName"));
+				String szName = cleanFileName(rs.getString("FileName"));
 
 				//START mime message attachments
 				fout.write( CRLF.getBytes() );
@@ -532,7 +533,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 				byte bOut[] = new byte[90];
 				int iTotalRead=0;
 				int iTotalWrite=0;
-				bis = new BufferedInputStream( RS.getBinaryStream("Attachment") ); //, 256 );
+				bis = new BufferedInputStream( rs.getBinaryStream("Attachment") ); //, 256 );
 				while ( bis.available() > 0 )
 				{
 					int iRead = bis.read( bIn);
@@ -558,8 +559,8 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		fout.write( CRLF.getBytes() );
 		fout.flush();
 		fout.close();
-		RS.close();
-		Stmt.close();
+		rs.close();
+		stmt.close();
 	}
 
 	/**

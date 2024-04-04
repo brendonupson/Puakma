@@ -195,6 +195,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 		dbConnectionPooler pooler = (dbConnectionPooler)m_map.get( s );
 		Connection cx = pooler.getConnection();
+		//set autocommit ??
 		//the next line ensures a pool created with bad credentials etc will be removed from the manager
 		//thus the next time it is called a new pool will be created
 		if(cx==null && pooler.getUsedItemCount()==0) removePooler(sAlias);

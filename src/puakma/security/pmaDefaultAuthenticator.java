@@ -23,7 +23,6 @@ package puakma.security;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.Hashtable;
 
@@ -46,8 +45,8 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 
 		//avoid buffer overflow login attempts
 		if(sUserName==null || sUserName.length()==0 || sUserName.length()>120) return loginResult;
-				
-		
+
+
 		String sEmailWhere = "";
 		String sLoginName = sUserName.toLowerCase();
 		MailAddress ma = new MailAddress(sLoginName);
@@ -128,8 +127,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 					SysCtx.doInformation("pmaDefaultAuthenticator.loginSuccess", new String[]{loginResult.UserName, sIPAddress}, this);
 					loginResult.ReturnCode=LoginResult.LOGIN_RESULT_SUCCESS;
 					//Note the login time...
-					PreparedStatement prepStmt2;
-					prepStmt2 = cx.prepareStatement("UPDATE PERSON SET LastLogin=?, LastLoginAddress=?, LastLoginUserAgent=? WHERE UserName=?");
+					PreparedStatement prepStmt2 = cx.prepareStatement("UPDATE PERSON SET LastLogin=?, LastLoginAddress=?, LastLoginUserAgent=? WHERE UserName=?");
 					prepStmt2.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
 					prepStmt2.setString(2, sIPAddress);
 					prepStmt2.setString(3, sUserAgent);
@@ -151,7 +149,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 			SysCtx.doError("pmaDefaultAuthenticator.loginSQLError", new String[]{sqle.getMessage()}, this);
 		}
 		finally
-		{
+		{						
 			SysCtx.releaseSystemConnection(cx);
 		}
 		return loginResult;
@@ -172,26 +170,27 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 	 */
 	public LoginResult populateSession(String szCanonicalName, String sAppURI)
 	{
-		Connection cx=null;
+		Connection cx = null;
+		PreparedStatement prepStmt = null;
+		ResultSet rs = null;
+		
 		LoginResult loginResult = new LoginResult();
 
 		try
 		{
 			cx = SysCtx.getSystemConnection();
 			String sQuery = "SELECT FirstName,LastName,UserName,LastLogin,LastLoginUserAgent,LastLoginAddress,LoginFlag FROM PERSON WHERE UserName=?";
-			PreparedStatement prepStmt = cx.prepareStatement(sQuery);
+			prepStmt = cx.prepareStatement(sQuery);
 			prepStmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			prepStmt.setString(1, szCanonicalName);        
-			ResultSet rs = prepStmt.executeQuery();
+			rs = prepStmt.executeQuery();
 			if(rs.next())
 			{
 				loginResult.FirstName = rs.getString("FirstName");
 				loginResult.LastName = rs.getString("LastName");
 				loginResult.UserName = rs.getString("UserName");            
 				loginResult.ReturnCode=LoginResult.LOGIN_RESULT_SUCCESS;            
-			}
-			rs.close();
-			prepStmt.close();
+			}			
 		}
 		catch(Exception e)
 		{
@@ -199,6 +198,8 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 		}
 		finally
 		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(prepStmt);
 			SysCtx.releaseSystemConnection(cx);
 		}
 		return loginResult;
@@ -210,24 +211,30 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 	 * This is to stop the possibility of recursively nested groups. The hastable
 	 * contains the names of the items already checked. Items will only be checked once
 	 */
-	private boolean isUserInGroupPrivate(Hashtable ht, SessionContext sessCtx, String szGroup)
+	private boolean isUserInGroupPrivate(Hashtable ht, SessionContext sessCtx, String sGroup)
 	{
+		if(sGroup==null || sGroup.length()==0) return false;
 		if(ht==null) ht = new Hashtable();
-		SysCtx.doDebug(pmaLog.DEBUGLEVEL_FULL, "isUserInGroupPrivate(%s->%s)", new String[]{sessCtx.getUserName(), szGroup}, this);
+		SysCtx.doDebug(pmaLog.DEBUGLEVEL_FULL, "isUserInGroupPrivate(%s->%s)", new String[]{sessCtx.getUserName(), sGroup}, this);
 		boolean bIsInGroup=false;
-		String szResult;
+		//String szResult;		
 		Connection cx=null;
-		if(ht.containsKey(szGroup)) return false;
-		ht.put(szGroup, szGroup);
+		PreparedStatement stmt = null;
+		ResultSet rs = null;
+		if(ht.containsKey(sGroup)) return false;
+		ht.put(sGroup, sGroup);
 		try
 		{
 			cx = SysCtx.getSystemConnection();
-			String szQuery = "SELECT PMAGROUPMEMBER.Member FROM PMAGROUP,PMAGROUPMEMBER WHERE UPPER(PMAGROUP.GroupName)='" + szGroup.toUpperCase() + "' AND PMAGROUP.GroupID=PMAGROUPMEMBER.GroupID";
-			Statement Stmt = cx.createStatement();
-			ResultSet RS = Stmt.executeQuery(szQuery);
-			while (RS.next())
+			//String szQuery = "SELECT PMAGROUPMEMBER.Member FROM PMAGROUP,PMAGROUPMEMBER WHERE UPPER(PMAGROUP.GroupName)='" + sGroup.toUpperCase() + "' AND PMAGROUP.GroupID=PMAGROUPMEMBER.GroupID";
+			//stmt = cx.createStatement();
+			String szQuery = "SELECT PMAGROUPMEMBER.Member FROM PMAGROUP,PMAGROUPMEMBER WHERE UPPER(PMAGROUP.GroupName)=? AND PMAGROUP.GroupID=PMAGROUPMEMBER.GroupID";
+			stmt = cx.prepareStatement(szQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt.setString(1, sGroup.toUpperCase());
+			rs = stmt.executeQuery();
+			while (rs.next())
 			{
-				szResult = Util.trimSpaces(RS.getString(1));
+				String szResult = Util.trimSpaces(rs.getString(1));
 				X500Name nmResult = new X500Name(szResult);
 				X500Name nmUser = sessCtx.getX500Name();
 				//check exact match, *=All, partial match (username must be longer than result!)
@@ -235,7 +242,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 						|| szResult.equals("*")
 						|| nmUser.matches(nmResult))
 				{
-					SysCtx.doDebug(pmaLog.DEBUGLEVEL_VERBOSE, "User '%s' is in group '%s'", new String[]{sessCtx.getUserName(), szGroup}, sessCtx);
+					SysCtx.doDebug(pmaLog.DEBUGLEVEL_VERBOSE, "User '%s' is in group '%s'", new String[]{sessCtx.getUserName(), sGroup}, sessCtx);
 					bIsInGroup=true;
 					break;
 				}
@@ -245,8 +252,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 					if(bIsInGroup) break;
 				}
 			}//while
-			RS.close();
-			Stmt.close();
+			
 		}
 		catch (Exception sqle)
 		{
@@ -254,7 +260,9 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 		}
 		finally
 		{
-		SysCtx.releaseSystemConnection(cx);
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
+			SysCtx.releaseSystemConnection(cx);
 		}
 		return bIsInGroup;
 	}

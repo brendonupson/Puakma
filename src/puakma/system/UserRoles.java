@@ -49,8 +49,8 @@ public class UserRoles
    * @return true if the object contains the given role
    */
   public boolean hasRole(String szRoleName)
-  {
-    if( htRoles.containsKey(szRoleName.toLowerCase()) ) return true;
+  {	  
+    if(szRoleName!=null && htRoles.containsKey(szRoleName.toLowerCase()) ) return true;
     return false;
   }
 

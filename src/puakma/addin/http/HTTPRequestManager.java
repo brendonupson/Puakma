@@ -32,6 +32,7 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.URLDecoder;
 import java.security.Principal;
 import java.text.SimpleDateFormat;
@@ -526,7 +527,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				doPost(m_sInboundPath);
 				bRequestProcessed=true;
 			}
-			
+
 			//update in case the action did some login
 			m_pStatus.setStatus(m_pSession.getUserNameAbbreviated() + ' ' + m_sInboundPath);
 
@@ -1508,12 +1509,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					actionReturn.bBuffer = m_action.getByteBuffer();
 					actionReturn.ContentType = m_action.getContentType(); 
 					long lActionTimeMS = System.currentTimeMillis() - lStart;
-					
+
 					if(m_http_server.getSlowActionTimeLimitMS()>0 && lActionTimeMS>m_http_server.getSlowActionTimeLimitMS())
 					{
 						m_pSystem.doError("HTTPRequest.SlowAction", new String[]{sActionClass, doc.rPath.getFullPath(), String.valueOf(lActionTimeMS), String.valueOf(m_http_server.getSlowActionTimeLimitMS())}, this);
 					}
-					
+
 					//System.out.println(szActionClass + " took " + lEnd + "ms");
 				}
 			}
@@ -1743,6 +1744,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			return;
 		}
 
+		FileInputStream fin = null;
 		try
 		{				
 			String sLastModified = "Last-Modified: " + puakma.util.Util.formatDate(dtLastModified, LAST_MOD_DATE, Locale.UK, m_tzGMT);
@@ -1755,12 +1757,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			String sExpires = "Expires: " + puakma.util.Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 			extra_headers.add(sExpires);
 
-			FileInputStream fin = new FileInputStream(fToServe);
+
 			String sReply = "";
 			if(iErrCode==RET_OK) sReply="OK";
 			//assume the smaller files may be css/js/jpg etc so can be compressed
 			if(fToServe.length()<204800) //less than 200Kb
 			{            
+				fin = new FileInputStream(fToServe);
 				byte buf[] = new byte[(int)fToServe.length()];
 				byte smallbuf[] = new byte[102400];
 				int iRead = fin.read(smallbuf);
@@ -1781,16 +1784,21 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				}
 				sendHTTPResponse(iErrCode, sReply, extra_headers, HTTP_VERSION,
 						sMimeType, buf);
+
 			}
 			else
-				sendHTTPResponse(iErrCode, sReply, extra_headers, HTTP_VERSION,
-						sMimeType, fToServe.length(),  fin);
-			fin.close();
+				serveFileOrStream(iErrCode, sReply, extra_headers, HTTP_VERSION,
+						sMimeType, fToServe.length(),  null, fToServe);
+
 		}
 		catch(Exception e)
 		{
 			sendHTTPResponse(500, "Something really bad happened when trying to serve your file. Sorry.... :-) " + e.toString(), extra_headers, HTTP_VERSION,
 					"text/html", null);
+		}
+		finally
+		{
+			if(fin!=null) try { fin.close(); }catch(Exception finex) {}
 		}
 	}
 
@@ -2030,25 +2038,25 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		}
 
-		sendHTTPResponse(http_code, http_code_string, extra_headers, http_version,
-				content_type, http_response_body.length, new ByteArrayInputStream(http_response_body));
+		serveFileOrStream(http_code, http_code_string, extra_headers, http_version,
+				content_type, http_response_body.length, new ByteArrayInputStream(http_response_body), null);
 	}
 
 	/**
-	 * This is a stream version for sending BIG files
+	 * This is a stream and file version for sending BIG files
 	 */
-	private void sendHTTPResponse(int http_code, String http_code_string,
+	private void serveFileOrStream(int http_code, String http_code_string,
 			ArrayList extra_headers, String http_version,
-			String content_type, long lStreamLengthBytes, InputStream is)
+			String content_type, long lStreamLengthBytes, InputStream is, File fOriginal)
 	{
-		final int MAX_CHUNK = 8192; //512k data chunks
-		File fOriginal=null;
+		final int MAX_CHUNK = 200000; //8192; //size of data chunks, 1500mtu?		
+		boolean bIsUsingTempFile = is!=null && fOriginal==null;
+		File fTemp=null;
 		File fByteServe=null;
 		ArrayList out_lines = new ArrayList();
-		
-		//FIXME When serving HUGE files, eg 18GB, dealing with an input stream causes the file to be copied before streaming
-		//this is a large performance penalty. This method should be passed the file rather than InputStream.
 
+		
+		
 		//m_pSystem.doDebug(0, http_code_string + " " + http_code_string + " stream:"+lStreamLengthBytes + " " + m_sInboundPath, this);
 		/*
 		 * BJU 8/5/07 Moved code here so all requests get the session cookie sent
@@ -2076,19 +2084,22 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//if an internal server error, close the connection
 		if(http_code>=500) m_bCloseConnection = true;
 
-		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "sendHTTPResponse(stream)", this);
+		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "serveFileOrStream(stream)", this);
 		// Don't send more than one HTTP response to the client..
 		//if(m_http_response_sent) return;
 
 		try
 		{
+			if(!bIsUsingTempFile) is = new FileInputStream(fOriginal);
 			//this.dumpHeaders(m_environment_lines);
 			String sRange = getByteRangeServe(m_environment_lines);
 			if(sRange!=null)
 			{
 				http_code = RET_PARTIAL_CONTENT;
 				http_code_string = "Partial Content";
+				
 			}
+			//System.err.println("serveFileOrStream(): range:["+sRange+"] ");
 			m_os.write((http_version + " " + http_code + " " + http_code_string + HTTP_NEWLINE).getBytes());
 			String sServer = "Server: Tornado/" + m_pSystem.getVersion();
 			m_os.write((sServer + HTTP_NEWLINE).getBytes());
@@ -2174,10 +2185,16 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						 * For small files, it may be faster to do this in a byte buffer,
 						 * but this will typically be for a BIG file 20MB pdf or so.
 						 */
-
-						fOriginal = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_byteserve_o_", null, m_pSystem.getTempDir());
-						fOriginal.deleteOnExit();
-						sendStreamToFile(is, fOriginal); //FIXME performance issue!
+						if(bIsUsingTempFile)
+						{
+							fTemp = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_byteserve_o_", null, m_pSystem.getTempDir());
+							fTemp.deleteOnExit();
+							sendStreamToFile(is, fTemp); //FIXME performance issue!
+						}
+						else
+						{
+							fTemp = fOriginal;							
+						}
 						fByteServe = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_byteserve_", null, m_pSystem.getTempDir());
 						fByteServe.deleteOnExit();
 						FileOutputStream foutBS = new FileOutputStream(fByteServe);
@@ -2187,11 +2204,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						//for each chunk                      
 						for(int i=0; i<arrRange.size(); i++)
 						{
-							FileInputStream fin = new FileInputStream(fOriginal);
+							FileInputStream fin = new FileInputStream(fTemp);
 							String sSubRange = puakma.util.Util.trimSpaces((String)arrRange.get(i)); 
-							int iRange[] = getRangeAsInt(sSubRange);
-							if(iRange[1]<=0) iRange[1] = (int)(lStreamLengthBytes-1);
-							int iRequestLength=(iRange[1]-iRange[0])+1;
+							long lRange[] = getRangeAsLong(sSubRange);
+							if(lRange[1]<=0) lRange[1] = (lStreamLengthBytes-1);
+							long lRequestLength=(lRange[1]-lRange[0])+1;
 							//System.out.println(i+":"+sSubRange + " "+iRequestLength + " bytes");
 
 							foutBS.write(("\r\n--"+sBoundary+"\r\n").getBytes());
@@ -2203,23 +2220,25 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 							//System.out.println("Skipping " + (iRange[0]-1));
 							//System.out.println("Available stream:"+fin.available());
 							//soakStartStream(fin, iRange[0]-lTotalOut);
-							if(iRange[0]>0) fin.skip(iRange[0]-1);
-							lTotalOut += iRange[0]-1;
+							if(lRange[0]>0) fin.skip(lRange[0]-1);
+							lTotalOut += lRange[0]-1;
 
 							int len=0;
 							int iWrote=0;
 
 							//System.out.println("request length " + iRequestLength);
-							while((len=fin.available()) > 0 && iWrote<iRequestLength)
+							byte[] output = new byte[MAX_CHUNK];
+							while((len=fin.available()) > 0 && iWrote<lRequestLength)
 							{
-								if(len>MAX_CHUNK) len = MAX_CHUNK;                              
-								if((iWrote+len)>iRequestLength) len = iRequestLength-iWrote;
-								byte[] output = new byte[len];                              
+								//if(len>MAX_CHUNK) len = MAX_CHUNK;                              
+								//if((iWrote+len)>lRequestLength) len = lRequestLength-iWrote;
+								//byte[] output = new byte[len];                              
 								int iRead = fin.read(output);              
 								if(iRead>0) foutBS.write(output, 0, iRead);
 
 								lTotalOut += iRead;
 								iWrote += iRead;
+								if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
 							}
 							//System.out.println("     : "+iRequestLength);
 							//System.out.println("wrote: "+iWrote);                          
@@ -2274,6 +2293,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				String sContentType = "Content-Type: " + getAppropriateCharset(content_type);
 				m_os.write((sContentType + HTTP_NEWLINE).getBytes());
 				String sContentLength = "Content-Length: " + ((lLastByteInRange-lFirstByteInRange)+1);
+				//System.err.println("serveFileOrStream(): sContentLength:["+sContentLength+"] ");
 				m_os.write((sContentLength + HTTP_NEWLINE).getBytes());
 				out_lines.add(sContentType);
 				out_lines.add(sContentLength);
@@ -2286,30 +2306,32 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(!m_sInboundMethod.equalsIgnoreCase("HEAD") && http_code!=RET_NOT_MODIFIED)
 			{
 				//System.out.println("here2");
-				int len=MAX_CHUNK;
-				int iContentLength = (int) ((lLastByteInRange-lFirstByteInRange)+1);
+				//int len=MAX_CHUNK;
+				//long lContentLength = ((lLastByteInRange-lFirstByteInRange)+1);
 				long lTotalOut=0;
-				if(iContentLength<MAX_CHUNK) len = iContentLength;
-				byte output[] = new byte[len];
+				//if(lContentLength<MAX_CHUNK) len = lContentLength;
+				byte bufOutput[] = new byte[MAX_CHUNK];
 
 				//	if(m_sInboundPath!=null && m_sInboundPath.indexOf(".mp4")>0) m_pSystem.doDebug(0, http_code + " " + http_code_string + " ["+sRange+"] firstbyte="+lFirstByteInRange+" lastbyte="+lLastByteInRange + " contentlen=" + iContentLength +" stream len="+lStreamLengthBytes + " " + m_sInboundPath, this);
 
 				is.skip(lFirstByteInRange);
 
-				while((len=is.available()) > 0)
+				//while((len=is.available()) > 0)
+				while(is.available() > 0)
 				{
-
-
-					int iRead = is.read(output);
+					int iRead = is.read(bufOutput);
 					if(iRead>0)
 					{
 						//System.out.println("lTotalOut="+lTotalOut+" iRead="+iRead+" lEndRange="+lEndRange);
-						if((lTotalOut+iRead)>iContentLength) iRead = (int)(iContentLength-lTotalOut);
-						if(iRead<=0) break;
-						m_os.write(output, 0, iRead);
+						//if((lTotalOut+iRead)>iContentLength) iRead = (int)(iContentLength-lTotalOut);
+						//if(iRead<=0) break;
+						m_os.write(bufOutput, 0, iRead);
 						m_http_server.updateBytesServed(iRead);   
 						lTotalOut += iRead;
-					}					
+						if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
+					}
+					else
+						break;
 					//System.out.println("here4");
 				}
 				//System.out.println("Wrote: "+lTotalOut);
@@ -2317,15 +2339,18 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_TOTALBYTESOUT, lTotalOut);
 			}//if !HEAD request
 			m_os.flush();        
-		} //try
-		catch (IOException ioe)
+		} //try		
+		catch (Exception ioe)
 		{
-			//System.out.println("ERR: " + ioe.toString());
+			System.err.println("serveFileOrStream(): " + ioe.toString());
+			m_bCloseConnection = true;
 		}
-
-		//cleanup temp files used for byteserving
-		if(fOriginal!=null) fOriginal.delete(); 
-		if(fByteServe!=null) fByteServe.delete(); 
+		finally
+		{
+			//cleanup temp files used for byteserving
+			if(bIsUsingTempFile && fTemp!=null) fTemp.delete(); 
+			if(fByteServe!=null) fByteServe.delete(); 
+		}
 
 		//System.out.println("REQUEST DONE");
 
@@ -2338,12 +2363,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		long lTransMS = System.currentTimeMillis() - m_lStart;
 		//String szReferer = Util.getMIMELine(m_environment_lines, "Referer");
 		//if(szReferer==null) szReferer = "";
+		/*
 		HTTPLogEntry stat;
 		if(m_pSession==null) 
 			stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, null); 
 		else
 			stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession.getSessionContext());
-
+*/
+		HTTPLogEntry stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession==null ? null : m_pSession.getSessionContext());
 		m_http_server.writeStatLog(stat, m_sInboundPath, m_sInboundMethod, m_iInboundSize);		
 		m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_BYTESINPERHOUR, m_iInboundSize);
 		m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_TOTALBYTESIN, m_iInboundSize);
@@ -2355,9 +2382,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * and how many bytes should be read from the stream when processed by the calling function.
 	 *
 	 */
-	private int[] getRangeAsInt(String sSubRange)
+	private long[] getRangeAsLong(String sSubRange)
 	{
-		int iReturn[] = new int[2];
+		long lReturn[] = new long[2];
 
 		int iPos = sSubRange.indexOf('-');
 		if(iPos>0)
@@ -2366,12 +2393,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			String sEnd = sSubRange.substring(iPos+1, sSubRange.length());
 			//int iStart=0;
 			//int iEnd=0;
-			try{iReturn[0] = Integer.parseInt(sStart);}catch(Exception a){}
-			try{iReturn[1] = Integer.parseInt(sEnd);}catch(Exception a){}
+			try{lReturn[0] = Long.parseLong(sStart);}catch(Exception a){}
+			try{lReturn[1] = Long.parseLong(sEnd);}catch(Exception a){}
 			//iReturn[0] = iStart;
 			//iReturn[1] = iEnd;
 		}
-		return iReturn;
+		return lReturn;
 	}
 
 	/**
@@ -2379,7 +2406,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private void sendStreamToFile(InputStream is, File fOriginal) throws IOException
 	{
-		final int MAX_CHUNK=20000;
+		final int MAX_CHUNK=200000;
 		int len=0;
 		int iTotalWrote=0;
 		FileOutputStream fout = new FileOutputStream(fOriginal);
@@ -2591,15 +2618,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doCleanup()", this);
 		if(m_action!=null) m_action.requestQuit();
-		try
-		{
-			m_sock.close();
-		}
-		catch(IOException io1)
-		{
-			//m_pSystem.doError("HTTPRequest.CloseInput", new String[]{io1.getMessage()}, this);
-		}
 		
+
 		try
 		{
 			m_is.close();
@@ -2616,6 +2636,15 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		catch(IOException io2)
 		{
 			//m_pSystem.doError("HTTPRequest.CloseOutput", new String[]{io2.getMessage()}, this);
+		}
+		
+		try
+		{
+			m_sock.close();
+		}
+		catch(IOException io1)
+		{
+			//m_pSystem.doError("HTTPRequest.CloseInput", new String[]{io1.getMessage()}, this);
 		}
 	}
 

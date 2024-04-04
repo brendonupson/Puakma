@@ -481,7 +481,7 @@ public class TornadoApplication implements ErrorDetect
 		String sQuery = "SELECT * FROM DESIGNBUCKET WHERE AppID="+lAppID+" AND "+sNamePart + sTypeClause;
 
 		//System.out.println(sQuery + " " + sDesignName + " " + iSlashPos + " " + iType);
-		
+
 		String sUpperDesignName = sDesignName.toUpperCase();
 		Connection cx=null;
 		PreparedStatement stmt = null;
@@ -839,21 +839,27 @@ public class TornadoApplication implements ErrorDetect
 	 * 
 	 * @param sessCtx
 	 * @param sRole
+	 * @param ur 
 	 * @return
 	 */
-	private boolean hasRoleInternal(SessionContext sessCtx, String sRole)
-	{
+	private boolean hasRoleInternal(SessionContext sessCtx, String sRole, UserRoles ur)
+	{				
+		if(ur!=null && ur.hasRole(sRole)) return true;
+
 		RequestPath rPath = this.getRequestPath();
 		String sAppName = rPath.Application;
 		String sAppGroup = rPath.Group;
-		//sysCtx.doDebug(pmaLog.DEBUGLEVEL_FULL, "hasRole()", this);
-		Connection cx=null;
+
+		Connection cx = null;
+		PreparedStatement stmt = null;
+		ResultSet rs = null;
 		boolean bHasRole=false;
-		//if(szApplication.length()==0) return false;//szApplication = pSystem.getSystemDBName();
-		if(sAppName==null || sAppName.length()==0) return false;
+
+		if(sRole==null || sAppName==null || sAppName.length()==0) return false;
 
 		boolean bHasGroup = true;
 		if(sAppGroup==null || sAppGroup.length()==0) bHasGroup = false;
+
 
 		String sQuery = "SELECT PERMISSION.Name FROM APPLICATION,ROLE,PERMISSION WHERE UPPER(APPLICATION.AppName)=? AND (APPLICATION.AppGroup='' OR APPLICATION.AppGroup IS NULL) AND APPLICATION.AppID=ROLE.AppID AND ROLE.RoleID=PERMISSION.RoleID AND UPPER(ROLE.RoleName)=?";
 		if(bHasGroup)
@@ -864,7 +870,7 @@ public class TornadoApplication implements ErrorDetect
 		try
 		{
 			cx = m_pSystem.getSystemConnection();
-			PreparedStatement stmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			stmt.setString(1, sAppName.toUpperCase());
 			if(bHasGroup)
 			{
@@ -873,15 +879,17 @@ public class TornadoApplication implements ErrorDetect
 			}
 			else
 				stmt.setString(2, sRole.toUpperCase());
-			ResultSet RS = stmt.executeQuery();
-			while (RS.next())
+			rs = stmt.executeQuery();
+			while (rs.next())
 			{
-				String szResult = RS.getString(1);
-				X500Name nmResult = new X500Name(szResult);
+				String sResult = rs.getString(1);
+				if(sResult==null || sResult.length()==0) continue;
+
+				X500Name nmResult = new X500Name(sResult);
 				X500Name nmUser = sessCtx.getX500Name();
 				//check exact match, *=All, partial match (username must be longer than result!)
 				if(nmUser.equals(nmResult)
-						|| szResult.equals("*")
+						|| sResult.equals("*")
 						|| nmUser.matches(nmResult))
 				{
 					bHasRole=true;
@@ -889,28 +897,23 @@ public class TornadoApplication implements ErrorDetect
 				else
 				{
 					//if the user is not anonymous and the role says only logged in users, allow it.
-					if(!nmUser.equals(pmaSession.ANONYMOUS_USER) && szResult.equals("!*")) 
+					if(!nmUser.equals(pmaSession.ANONYMOUS_USER) && sResult.equals("!*")) 
 						bHasRole=true;
 					else //check groups and other roles here recursively
 					{
-						if(szResult!=null)
-						{
-							if(szResult.charAt(0)=='[' && szResult.charAt(szResult.length()-1)==']')
-							{                        
-								String sNewRole = szResult.substring(1, szResult.length()-1);
-								//System.out.println("Checking role contains role "+szResult + " newrole="+sNewRole+"=");
-								//call this method again                        
-								bHasRole = hasRoleInternal(sessCtx, sNewRole);
-							}
-							else
-								bHasRole = m_pSystem.isUserInGroup(sessCtx, szResult, rPath.getFullPath());
+						if(sResult.charAt(0)=='[' && sResult.charAt(sResult.length()-1)==']')
+						{                        
+							String sNewRole = sResult.substring(1, sResult.length()-1);
+							//System.out.println("Checking role contains role "+szResult + " newrole="+sNewRole+"=");
+							//call this method again                        
+							bHasRole = hasRoleInternal(sessCtx, sNewRole, ur);
 						}
+						else
+							bHasRole = m_pSystem.isUserInGroup(sessCtx, sResult, rPath.getFullPath());
 					}
 				}
 				if(bHasRole) break;
-			}//while
-			RS.close();
-			stmt.close();
+			}//while			
 		}
 		catch (Exception sqle)
 		{
@@ -918,6 +921,8 @@ public class TornadoApplication implements ErrorDetect
 		}
 		finally
 		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
 			m_pSystem.releaseSystemConnection(cx);
 		}
 		return bHasRole;
@@ -944,7 +949,7 @@ public class TornadoApplication implements ErrorDetect
 			for(int i=0; i<sRoles.length; i++)
 			{
 				String sRoleName = sRoles[i];
-				if(hasRoleInternal(sessCtx, sRoleName))
+				if(hasRoleInternal(sessCtx, sRoleName, ur))
 				{
 					ur.addRole(sRoleName);
 				}
