@@ -332,15 +332,16 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "openStreams()", this);
 		try
 		{
+			int bufferSize = 20000; //assume 1500mtu, so buffer should be bigger
 			InputStream input = m_sock.getInputStream();
 			//VERY important to specify the correct charset!!
 			//this took me 2 days to work out why I couldn't upload gif/binary files!
 			//ISO-8859-1 as specified in the http1.1 w3c doco
-			m_is = new ByteStreamReader(input, 8192, HTTP.DEFAULT_CHAR_ENCODING); 
+			m_is = new ByteStreamReader(input, bufferSize, HTTP.DEFAULT_CHAR_ENCODING); 
 			//m_is = new BufferedReader(new InputStreamReader(input, "ISO-8859-1"), 24576);
 
-			OutputStream output_stream = m_sock.getOutputStream();
-			m_os = new BufferedOutputStream(output_stream, 8192); //BJU 4/5/05 changed to 8k buffer
+			OutputStream output_stream = m_sock.getOutputStream();			
+			m_os = new BufferedOutputStream(output_stream, bufferSize); //BJU 4/5/05 changed to 8k buffer
 		}
 		catch (IOException ioe)
 		{
@@ -2049,7 +2050,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			ArrayList extra_headers, String http_version,
 			String content_type, long lStreamLengthBytes, InputStream is, File fOriginal)
 	{
-		final int MAX_CHUNK = 200000; //8192; //size of data chunks, 1500mtu?		
+		final int MAX_CHUNK = 15000; //200000; //8192; //size of data chunks, 1500mtu?		
 		boolean bIsUsingTempFile = is!=null && fOriginal==null;
 		File fTemp=null;
 		File fByteServe=null;
@@ -2311,7 +2312,6 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				long lTotalOut=0;
 				//if(lContentLength<MAX_CHUNK) len = lContentLength;
 				byte bufOutput[] = new byte[MAX_CHUNK];
-
 				//	if(m_sInboundPath!=null && m_sInboundPath.indexOf(".mp4")>0) m_pSystem.doDebug(0, http_code + " " + http_code_string + " ["+sRange+"] firstbyte="+lFirstByteInRange+" lastbyte="+lLastByteInRange + " contentlen=" + iContentLength +" stream len="+lStreamLengthBytes + " " + m_sInboundPath, this);
 
 				is.skip(lFirstByteInRange);

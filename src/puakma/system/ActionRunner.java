@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *************************************************************** */
 package puakma.system;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
@@ -49,23 +50,40 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	protected String ApplicationGroup;
 	protected String Application;
 	protected HTMLDocument ActionDocument; //careful may be null!!  
-	private byte[] byteBuffer=null;
+	//private byte[] byteBuffer=null;
 	private String ContentType="text/html";
 	private boolean m_bShouldQuit=false;
-	private final int CHUNK_SIZE=1024; //increase buffer by this amount when we run out of space
+	//private final int CHUNK_SIZE=1024; //increase buffer by this amount when we run out of space
 	private int m_iBufferSize=-1;
 	private boolean m_bHasStreamedData=false; 
-	
+	private ByteArrayOutputStream m_baos = new ByteArrayOutputStream(1024);
+
 	public ActionRunner(){}
 
 	/**
 	 * Used by the action to write data directly to the browser.
 	 * @param sData the String to write to the buffer
 	 */
+
 	public void write(String sData)
 	{    
 		if(sData==null) return;
-		
+
+		try 
+		{
+			byte bufData[] = Util.utf8FromString(sData);
+			m_baos.write(bufData);
+		}
+		catch(Exception e) 
+		{
+			System.err.println("ActionRunner.write() " + e.toString());
+		}
+	}
+	/*
+	public void write(String sData)
+	{    
+		if(sData==null) return;
+
 		byte bufData[] = Util.utf8FromString(sData);
 		if(byteBuffer==null) 
 		{
@@ -96,7 +114,7 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 		//now add the new chunk of data
 		System.arraycopy(bufData, 0, byteBuffer, m_iBufferSize, bufData.length);
 		m_iBufferSize += bufData.length;
-	}
+	}*/
 
 	/**
 	 * Used by the agent to write data directly to the browser with a trailing CRLF.
@@ -115,11 +133,24 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	 */
 	public void setBuffer(byte[] newBuffer)
 	{
-		if(newBuffer!=null)
+		try
 		{
-			/*byteBuffer = new byte[newBuffer.length];
-			System.arraycopy(newBuffer, 0, byteBuffer, 0, newBuffer.length);
-			m_iBufferSize = newBuffer.length;*/
+			m_baos.reset();
+			if(newBuffer!=null)
+			{
+				m_baos.write(newBuffer);
+			}
+		}
+		catch(Exception e)
+		{
+			System.err.println("ActionRunner.setBuffer() " + e.toString());
+		}
+	}
+	/*
+	public void setBuffer(byte[] newBuffer)
+	{
+		if(newBuffer!=null)
+		{			
 			//BJU 2007-04-18 don't copy the block because very large objects (eg >120MB) waste huge slabs of memory
 			byteBuffer = newBuffer;
 			m_iBufferSize = newBuffer.length;
@@ -127,6 +158,7 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 		else
 			byteBuffer = null;
 	}
+	 */
 
 	/**
 	 * Used by the caller to get the contents of the buffer. If sbOut is not null
@@ -135,14 +167,22 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	 */
 	public byte[] getByteBuffer()
 	{
+		if(m_baos.size()<1) return null;
+		return m_baos.toByteArray();
+	}
+	/*
+	public byte[] getByteBuffer()
+	{
 		//the OR is a safety check....
 		if(byteBuffer==null || m_iBufferSize<1) return null;
+
 		//TODO this is also inefficient for large byte buffers. Why did I create m_iBufferSize?!
 		byte bufReturn[] = new byte[m_iBufferSize];
 		System.arraycopy(byteBuffer, 0, bufReturn, 0, m_iBufferSize);
 		return bufReturn;
-		//return byteBuffer;
-	}
+		
+		//return Arrays.copyOfRange(byteBuffer, 0, m_iBufferSize);
+	}*/
 
 	/**
 	 * Used by the caller to get the contents of the buffer. If sbOut is not null
@@ -150,13 +190,21 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	 * @return the internal byte buffer into a utf-8 StringBuilder
 	 */
 	public StringBuilder getStringBuilder()
-	{
-
+	{	
+		byte buf[] = getByteBuffer();
+		StringBuilder sbOut = new StringBuilder();
+		sbOut.append(Util.stringFromUTF8(buf));
+		return sbOut;
+	}
+	/*
+	public StringBuilder getStringBuilder()
+	{		
 		if(byteBuffer==null) return null;
 		StringBuilder sbOut = new StringBuilder(byteBuffer.length*2);
 		sbOut.append(Util.stringFromUTF8(byteBuffer));
 		return sbOut;
 	}
+	*/
 
 	/**
 	 * Called by the HTTPRequestManager prior to execute(). This is used to set up the class

@@ -51,6 +51,7 @@ public class ClassData
 	public static final int CONSTANT_Package = 20;
 
 
+	private static int JAVA_CLASS_MAGIC = 0xCAFEBABE;
 	public int m_Magic=0;
 	public int m_MajorVersion=0;
 	public int m_MinorVersion=0;
@@ -80,6 +81,8 @@ public class ClassData
 		{
 			in = new DataInputStream(ins);
 			m_Magic = in.readInt();
+			if(m_Magic!=JAVA_CLASS_MAGIC) return; //not a Java class file, bail out
+				
 			m_MinorVersion=in.readShort(); // minor
 			m_MajorVersion=in.readShort(); // major
 			int count = in.readUnsignedShort();
@@ -153,7 +156,7 @@ public class ClassData
 			if(nameIndex!=null) name = (String)pool[nameIndex.intValue()];
 
 			name = name.replace('/', '.');
-			m_FullName = new String(name);
+			m_FullName = name; //new String(name);
 			int dot = name.lastIndexOf('.');
 			if (dot>=0)
 			{
@@ -163,7 +166,7 @@ public class ClassData
 			else
 			{
 				m_PackageName = "";
-				m_ClassName = new String(name);
+				m_ClassName = name; //new String(name);
 			}
 			in.close();
 		}
@@ -183,7 +186,7 @@ public class ClassData
 	 */
 	public boolean isValidClass()
 	{
-		if(m_Magic == 0xCAFEBABE && m_ClassName!=null && m_ClassName.length()>0) return true;
+		if(m_Magic == JAVA_CLASS_MAGIC && m_ClassName!=null && m_ClassName.length()>0) return true;
 		return false;
 	}
 }
