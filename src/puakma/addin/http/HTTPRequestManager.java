@@ -1417,6 +1417,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private ActionReturn doPreActionProcessing(HTMLDocument docHTML, boolean bGet)
 	{
+		if(m_bIsInErrorState) return null;
 		//only run this on pages and actions
 		//NOTE: This may need ot be changed in the future so it will run against resources as well!! configurable through another appparam?
 		if(docHTML.designObject!=null && !(docHTML.designObject.getDesignType()==DesignElement.DESIGN_TYPE_ACTION || docHTML.designObject.getDesignType()==DesignElement.DESIGN_TYPE_PAGE)) return null;
@@ -1450,6 +1451,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private ActionReturn runActionOnDocument(HTMLDocument doc, String sActionClass, boolean bOpenPage)
 	{
+		if(m_bIsInErrorState) return null;
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "runActionOnDocument()", this);
 		ActionReturn actionReturn = null;
 		//String szRedirect;
@@ -1575,6 +1577,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					sendPuakmaError(500, doc);
 				}*/
 				doc.replaceItem(Document.ERROR_FIELD_NAME, sbRaw.toString());
+				m_bIsInErrorState  = true;
 				sendPuakmaError(500, doc);
 			}			
 		}//if
@@ -2548,7 +2551,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//int iReturnCode = performRequest(sDocPath, docHTML, true, false, true);
 		int iReturnCode = RET_INTERNALSERVERERROR;
 		if(m_bIsInErrorState) m_bCloseConnection = true;
-		if(!m_bIsInErrorState) iReturnCode = performRequest(sDocPath, docHTML, true, false, true);
+		iReturnCode = performRequest(sDocPath, docHTML, true, false, true);		
 		m_bIsInErrorState  = true;
 		switch(iReturnCode)
 		{
