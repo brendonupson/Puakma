@@ -85,6 +85,11 @@ public class dbConnectionPoolManager implements ErrorDetect
 				{				
 					//System.out.println("Interrupted!");
 				}
+				catch (Throwable t) 
+				{				
+					//eg out of memory?
+					//System.out.println(t.toString());
+				}
 				//System.out.println("Cleaning... ");				
 			}
 			//System.out.println("SHUTDOWN: "+this.getName());			
@@ -320,28 +325,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 			if ( pool != null ) pool.doExpire();			
 		}
 	}
-
-	/**
-	 * @deprecated
-	 */
-	public synchronized void zz_closeAllConnections()
-	{
-		//m_bStopped = false;
-
-		Enumeration en = m_map.elements();
-		while ( en.hasMoreElements() )
-		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
-			try   
-			{  
-				if ( pool != null ) pool.closeAllConnections();            
-			}
-			catch (Exception e )
-			{
-				m_sysCtx.doError("Trapped exception closeAllConnections()", this);
-			}
-		}
-	}
+	
 
 	/**
 	 *
