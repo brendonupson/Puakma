@@ -580,17 +580,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		ArrayList extra_headers = new ArrayList();
 
-		if(document_path==null || document_path.length()==0 || document_path.equals("*"))
+		if(document_path!=null && !document_path.equals("*")) //document_path==null || document_path.length()==0 || document_path.equals("*"))
 		{
-			//Look for custom options from file: ../config/http-OPTIONS.config
-			ArrayList serverOptions = m_http_server.getHttpOptions();
-			if(serverOptions!=null && serverOptions.size()>0)
-			{				
-				extra_headers.addAll(serverOptions);
-			}
-		}
-		else // is for a specific app
-		{
+			//TODO check app exists?
 			RequestPath rPath = new RequestPath(document_path);
 			String sDisabled = getAppParam(m_pSession, "DisableApp", rPath.Group, rPath.Application);
 			if(sDisabled!=null && sDisabled.equals("1"))
@@ -608,14 +600,24 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//nothing was added, so add some defaults
 		if(extra_headers.size()==0)
 		{
-			// Allow all origins
-			extra_headers.add("Access-Control-Allow-Origin: *");
-			extra_headers.add("Access-Control-Allow-Methods: " + String.join(", ", m_http_server.getAllowedHTTPMethods())); 
-			// Allow all headers
-			extra_headers.add("Access-Control-Allow-Headers: *");
-			// Allow credentials (cookies, HTTP auth)
-			extra_headers.add("Access-Control-Allow-Credentials: true");
-			extra_headers.add("Access-Control-Max-Age: 3600");  // Cache preflight response for 1 hour (3600 seconds)
+			//Look for custom options from file: ../config/http-OPTIONS.config
+			ArrayList serverOptions = m_http_server.getHttpOptions();
+			if(serverOptions!=null && serverOptions.size()>0)
+			{				
+				extra_headers.addAll(serverOptions);
+			}
+
+			if(extra_headers.size()==0) //last resort, hard coded defaults
+			{
+				// Allow all origins
+				extra_headers.add("Access-Control-Allow-Origin: *");
+				extra_headers.add("Access-Control-Allow-Methods: " + String.join(", ", m_http_server.getAllowedHTTPMethods())); 
+				// Allow all headers
+				extra_headers.add("Access-Control-Allow-Headers: *");
+				// Allow credentials (cookies, HTTP auth)
+				extra_headers.add("Access-Control-Allow-Credentials: true");
+				extra_headers.add("Access-Control-Max-Age: 3600");  // Cache preflight response for 1 hour (3600 seconds)
+			}
 		}
 
 		sendHTTPResponse(RET_OK, "OK", extra_headers, HTTP_VERSION, null, null);
