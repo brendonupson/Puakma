@@ -223,7 +223,6 @@ public class HTTPServer extends Thread implements ErrorDetect
 
 		try{ m_iHTTPSlowActionMS = Integer.parseInt(m_pSystem.getSystemProperty("HTTPSlowActionMS")); }
 		catch(Exception r){}
-
 		
 
 		try
@@ -290,6 +289,8 @@ public class HTTPServer extends Thread implements ErrorDetect
 		//m_pSystem.clearDBPoolManager();
 	}
 
+
+	
 
 	/**
 	 *
@@ -981,6 +982,11 @@ public class HTTPServer extends Thread implements ErrorDetect
 	{
 		// TODO Auto-generated method stub
 		return m_bShouldDisableBasicAuth;
+	}
+
+	public ArrayList getHttpOptions() 
+	{
+		return m_Parent.getHttpOptions();
 	}
 
 }//class

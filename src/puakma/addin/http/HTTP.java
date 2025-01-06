@@ -20,9 +20,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *************************************************************** */
 package puakma.addin.http;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -40,6 +43,7 @@ import puakma.addin.http.log.HTTPLogEntry;
 import puakma.addin.http.log.HTTPLogger;
 import puakma.server.AddInMessage;
 import puakma.system.SystemContext;
+import puakma.util.Util;
 
 /**
  * HTTPServer is Puakma's web server.
@@ -83,7 +87,7 @@ public class HTTP extends pmaAddIn
 	private boolean m_bNoReverseDNS = false;
 	//private String[] m_sAllowMethods = new String[] {"PUT","DELETE"}; //defaults
 	private String[] m_sAllowMethods = new String[] {"CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "TRACE"}; //defaults
-
+	private ArrayList m_httpOptions = new ArrayList();
 
 	/**
 	 * This method is called by the pmaServer object
@@ -175,6 +179,8 @@ public class HTTP extends pmaAddIn
 		}
 
 		loadHostMap();
+		
+		loadOptionsFile();
 
 		// main loop
 		while (!this.addInShouldQuit() && m_Listeners.size()>0)
@@ -210,6 +216,31 @@ public class HTTP extends pmaAddIn
 			}
 		}//if
 	}
+	
+	private void loadOptionsFile() 
+	{
+		// TODO Auto-generated method stub
+		try
+		{			
+			String sOptionsFile = m_pSystem.getConfigDir().getAbsolutePath() +  "/http-OPTIONS.config";
+			
+			m_httpOptions.clear();
+			BufferedReader br = new BufferedReader(new FileReader(sOptionsFile));
+			String line = null;
+		    while ((line = Util.trimSpaces(br.readLine())) != null) 
+		    {
+		       // process the line. ignore lines beginning #
+		    	if(line.length()>0 && line.charAt(0)!='#') m_httpOptions.add(line);
+		    }
+		}
+		catch(Exception e){}
+	}
+	
+	public ArrayList getHttpOptions() 
+	{
+		return m_httpOptions;
+	}
+	
 
 	/**
 	 * Check that each listener is running. If the listener is not running, then remove it

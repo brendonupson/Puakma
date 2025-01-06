@@ -511,19 +511,26 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				doGet(null, m_sInboundPath, false, true);
 				bRequestProcessed=true;
 			}
-			if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("POST")) 
+
+			if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("OPTIONS")) 
+			{
+				m_bDataPosted = false;
+				doOptions(m_sInboundPath);
+				bRequestProcessed=true;
+			}
+
+			/*if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("POST"))			
 			{
 				m_bDataPosted = true;
 				doPost(m_sInboundPath);
 				bRequestProcessed=true;
-			}
+			}*/
+
 			//treat as post, CardDav etc extensively use OPTIONS
 			//allow other types eg PROPFIND, SEARCH, PUT
 			String sAllowMethods[] = m_http_server.getAllowedHTTPMethods();
 			if(!bRequestProcessed && isInList(m_sInboundMethod, sAllowMethods)) //m_sInboundMethod.equalsIgnoreCase("OPTIONS")) 
-			{	
-				//sendOptions(m_sInboundPath);
-				//bRequestProcessed=true;
+			{					
 				m_bDataPosted = true;
 				doPost(m_sInboundPath);
 				bRequestProcessed=true;
@@ -565,6 +572,53 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			return false;
 		}
 		return true;
+	}
+
+	private void doOptions(String document_path)
+	{
+		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doOptions()", this);
+
+		ArrayList extra_headers = new ArrayList();
+
+		if(document_path==null || document_path.length()==0 || document_path.equals("*"))
+		{
+			//Look for custom options from file: ../config/http-OPTIONS.config
+			ArrayList serverOptions = m_http_server.getHttpOptions();
+			if(serverOptions!=null && serverOptions.size()>0)
+			{				
+				extra_headers.addAll(serverOptions);
+			}
+		}
+		else // is for a specific app
+		{
+			RequestPath rPath = new RequestPath(document_path);
+			String sDisabled = getAppParam(m_pSession, "DisableApp", rPath.Group, rPath.Application);
+			if(sDisabled!=null && sDisabled.equals("1"))
+			{
+				HTMLDocument docErr = new HTMLDocument(m_pSession);
+				docErr.rPath = rPath;
+				sendPuakmaError(RET_FORBIDDEN, docErr);
+				return;
+			}
+
+			//TODO run the OPTIONS action in the target app for custom settings to return
+			//DesignElement deOptions = getDesignElement(m_pSession, rPath.Application, rPath.Group, sOptionsFileName, DesignElement.DESIGN_TYPE_ACTION);			
+		}
+
+		//nothing was added, so add some defaults
+		if(extra_headers.size()==0)
+		{
+			// Allow all origins
+			extra_headers.add("Access-Control-Allow-Origin: *");
+			extra_headers.add("Access-Control-Allow-Methods: " + String.join(", ", m_http_server.getAllowedHTTPMethods())); 
+			// Allow all headers
+			extra_headers.add("Access-Control-Allow-Headers: *");
+			// Allow credentials (cookies, HTTP auth)
+			extra_headers.add("Access-Control-Allow-Credentials: true");
+			extra_headers.add("Access-Control-Max-Age: 3600");  // Cache preflight response for 1 hour (3600 seconds)
+		}
+
+		sendHTTPResponse(RET_OK, "OK", extra_headers, HTTP_VERSION, null, null);
 	}
 
 	/**
@@ -2059,8 +2113,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		File fByteServe=null;
 		ArrayList out_lines = new ArrayList();
 
-		
-		
+
+
 		//m_pSystem.doDebug(0, http_code_string + " " + http_code_string + " stream:"+lStreamLengthBytes + " " + m_sInboundPath, this);
 		/*
 		 * BJU 8/5/07 Moved code here so all requests get the session cookie sent
@@ -2101,7 +2155,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			{
 				http_code = RET_PARTIAL_CONTENT;
 				http_code_string = "Partial Content";
-				
+
 			}
 			//System.err.println("serveFileOrStream(): range:["+sRange+"] ");
 			m_os.write((http_version + " " + http_code + " " + http_code_string + HTTP_NEWLINE).getBytes());
@@ -2372,7 +2426,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, null); 
 		else
 			stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession.getSessionContext());
-*/
+		 */
 		HTTPLogEntry stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession==null ? null : m_pSession.getSessionContext());
 		m_http_server.writeStatLog(stat, m_sInboundPath, m_sInboundMethod, m_iInboundSize);		
 		m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_BYTESINPERHOUR, m_iInboundSize);
@@ -2596,13 +2650,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	/**
 	 *
 	 */
-	private void sendOptions(String sInboundPath) //eg "/" or "*" maybe we'll do something with this later??
+	/*private void sendOptions(String sInboundPath) //eg "/" or "*" maybe we'll do something with this later??
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "sendOptions()", this);
 		ArrayList extra_headers = new ArrayList();
 		extra_headers.add("Allow: GET, POST, HEAD, OPTIONS");
 		sendHTTPResponse(200, "OK", extra_headers, HTTP_VERSION, null, null);
-	}
+	}*/
 
 	/**
 	 *
@@ -2621,7 +2675,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doCleanup()", this);
 		if(m_action!=null) m_action.requestQuit();
-		
+
 
 		try
 		{
@@ -2640,7 +2694,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			//m_pSystem.doError("HTTPRequest.CloseOutput", new String[]{io2.getMessage()}, this);
 		}
-		
+
 		try
 		{
 			m_sock.close();
