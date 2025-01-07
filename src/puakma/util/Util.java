@@ -485,10 +485,10 @@ public class Util
 	 * example: ArrayList v = puakma.util.Util.splitString("NSW,VIC,QLD", ",");
 	 * @return null if either of the inputs are null
 	 */
-	public static ArrayList splitString(String sInput, String sSeparator)
+	public static ArrayList<String> splitString(String sInput, String sSeparator)
 	{
 		if(sInput==null || sSeparator==null) return null;
-		ArrayList vReturn = new ArrayList();
+		ArrayList<String> vReturn = new ArrayList<String>();
 
 		int iPos = sInput.indexOf(sSeparator);
 		while(iPos>=0)

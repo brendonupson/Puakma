@@ -32,7 +32,7 @@ import puakma.util.Util;
  */
 public class DocumentMultiItem extends DocumentItem
 {
-	Vector m_vList = new Vector();
+	Vector<String> m_vList = new Vector<String>();
 
 	/*
 	 * Used to create multi items
@@ -41,7 +41,6 @@ public class DocumentMultiItem extends DocumentItem
 	{
 		super(paramParent, paramItemName, paramItemValue);
 		setMultiStringValue(paramItemValue);
-		//if(paramItemValue!=null) m_vList.add(paramItemValue);
 		setType(ITEM_TYPE_MULTI);
 	}
 
@@ -152,7 +151,7 @@ public class DocumentMultiItem extends DocumentItem
 		m_vList.removeAllElements();
 		if(sNewValues==null) return;
 
-		ArrayList v = Util.splitString(sNewValues, ",");
+		ArrayList<String> v = Util.splitString(sNewValues, ",");
 		if(v!=null) m_vList.addAll(v);
 	}
 
@@ -160,7 +159,7 @@ public class DocumentMultiItem extends DocumentItem
 	/**
 	 * Use this method to get the buffer
 	 */
-	public Vector getValues()
+	public Vector<String> getValues()
 	{
 		return m_vList;
 	}

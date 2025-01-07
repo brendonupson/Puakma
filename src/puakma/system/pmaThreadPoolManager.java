@@ -41,7 +41,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	private int m_iMaxThreads=100;
 	private int m_iCurrentThreadCount=0;
 	private SystemContext m_pSystem;
-	private Vector m_vThreads = new Vector();
+	private Vector<pmaThread> m_vThreads = new Vector<pmaThread>();
 	private int m_iThreadWaitTimeMS=2000; //how long to wait before bail. set to -1 to wait forever.
 	private boolean m_bShutdown=false;
 	private long m_lThreadNum=1;

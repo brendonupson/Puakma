@@ -408,7 +408,7 @@ public class RequestPath
 	public String getParameter(String sParamName)
 	{
 		if(Parameters==null || Parameters.length()==0 || sParamName==null || sParamName.length()==0) return null;
-		ArrayList arrParams = Util.splitString(Parameters, '&');
+		ArrayList<String> arrParams = Util.splitString(Parameters, '&');
 		for(int i=0; i<arrParams.size(); i++)
 		{
 			String sCurrentParameter = (String)arrParams.get(i);
