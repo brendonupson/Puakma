@@ -257,7 +257,7 @@ public class HTMLControl
 	private void setChoiceArray(String sChoices)
 	{
 		if(sChoices==null || sChoices.length()==0) return;
-		ArrayList ar = Util.splitString(sChoices, ',');
+		ArrayList<String> ar = Util.splitString(sChoices, ',');
 
 		pDocument.setItemChoices(Name, Util.objectArrayToStringArray(ar.toArray()));
 	}
@@ -301,7 +301,7 @@ public class HTMLControl
 	 * Removes an entry from the array. the idea is we remove the elements the
 	 * class uses, which should leave the javascript & special tags
 	 */
-	private void dropArrayValue(String szKey, ArrayList al)
+	private void dropArrayValue(String szKey, ArrayList<String> al)
 	{
 		int i;
 		String szValue;
@@ -449,7 +449,7 @@ public class HTMLControl
 	public void dropItemOption(String sOptionName)
 	{
 		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		while(st.hasMoreTokens())
 		{
 			String sItem = (String)st.nextElement();
@@ -464,7 +464,7 @@ public class HTMLControl
 	 * Get a value from a pair ie Name="xxxx" where szKey="Name" will
 	 * return xxxx, stripping off the quotes (if any)
 	 */
-	private String getArrayValue(String sKey, ArrayList al, boolean bAllowReturnNull)
+	private String getArrayValue(String sKey, ArrayList<String> al, boolean bAllowReturnNull)
 	{
 		int i;
 		String szValue;
@@ -659,7 +659,7 @@ public class HTMLControl
 		if(di instanceof DocumentMultiItem)
 		{
 			DocumentMultiItem dmi = (DocumentMultiItem)di;
-			Vector v = dmi.getValues();
+			Vector<String> v = dmi.getValues();
 			if(v!=null)
 			{
 				sValues = new String[v.size()];

@@ -313,7 +313,7 @@ public class Util
 	 * The next related line starts with a space
 	 * TODO: possibly make this account for multiple split lines? Does any browser do this??
 	 */
-	public static String getMIMELine(ArrayList v, String sKey)
+	public static String getMIMELine(ArrayList<String> v, String sKey)
 	{
 		String sLine2="";
 		int iOffset;
@@ -344,12 +344,12 @@ public class Util
 	/**
 	 *
 	 */
-	public static String[] getAllMIMELines(ArrayList v, String sKey)
+	public static String[] getAllMIMELines(ArrayList<String> v, String sKey)
 	{
 		String szLine, szLine2="";
 		int iOffset;
 		if(sKey==null) return null;
-		ArrayList arrReturn = new ArrayList();
+		ArrayList<String> arrReturn = new ArrayList<String>();
 
 		for(int i=0; i<v.size(); i++)
 		{
@@ -411,7 +411,7 @@ public class Util
 	/**
 	 * Puts a value in the http header. Pass a null value to remove the header completely
 	 */
-	public static void replaceHeaderValue(ArrayList environment_lines, String sHeader, String sValue)
+	public static void replaceHeaderValue(ArrayList<String> environment_lines, String sHeader, String sValue)
 	{
 		String sFind = sHeader.toLowerCase()+':';
 		for(int i=0; i<environment_lines.size(); i++)
@@ -520,7 +520,7 @@ public class Util
 
 		if(strings instanceof Collection)
 		{
-			Collection coll = (Collection)strings;
+			Collection<String> coll = (Collection<String>)strings;
 			sSourceData = Util.objectArrayToStringArray(coll.toArray());
 		}
 		if(strings instanceof String[])
@@ -546,10 +546,10 @@ public class Util
 	 * example: ArrayList a = puakma.util.Util.splitString("NSW,VIC,QLD", ',');
 	 * @return null if either of the inputs are null
 	 */
-	public static ArrayList splitString(String sInput, char cChar)
+	public static ArrayList<String> splitString(String sInput, char cChar)
 	{
 		if(sInput==null) return null;
-		ArrayList vReturn = new ArrayList();
+		ArrayList<String> vReturn = new ArrayList<String>();
 
 		int iPos = sInput.indexOf(cChar);
 		while(iPos>=0)
@@ -1100,7 +1100,7 @@ public class Util
 	{
 		final String MX_RECORD="MX";
 		String sResult = null;
-		Hashtable htJNDIEnv = new Hashtable();      
+		Hashtable<String, String> htJNDIEnv = new Hashtable<String, String>();      
 		htJNDIEnv.put("java.naming.factory.initial", "com.sun.jndi.dns.DnsContextFactory");
 
 		DirContext ictx = new InitialDirContext(htJNDIEnv);

@@ -85,7 +85,7 @@ public class MailAddress
      */
     public static MailAddress[] parseMailAddresses(String sAddresses, String sDelimiter)
     {        
-        ArrayList arr = new ArrayList();
+        ArrayList<MailAddress> arr = new ArrayList<MailAddress>();
         if(sDelimiter==null) sDelimiter = ",";
         if(sAddresses==null || sAddresses.length()==0) return null;
         

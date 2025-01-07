@@ -69,7 +69,7 @@ public class Document implements ErrorDetect,Cloneable
 	public static final String APPPARAM_DEFAULTCHARSET="defaultcharset"; //default characterset for this application. i18n etc
 	public static final String APPPARAM_DISABLEAPP="disableapp"; //'1' if the application is disabled
 	public static final String APPPARAM_FORCESECURECONNECTION = "forcesecureconn";
-	
+
 	public static final String PAGE_LOGIN_ITEM="$LoginPage";
 	public static final String PAGE_LOGIN_BYPASS="$BypassAuthenticators";
 	public static final String PAGE_TITLE_ITEM="$PageTitle";
@@ -95,7 +95,7 @@ public class Document implements ErrorDetect,Cloneable
 	public static final String MAIL_IMPORTANCE_ITEM = "Importance";
 
 	public static final String DATA_ITEM_NAME = "Data";
-	
+
 
 	private String m_sSkipUntil=""; //for mime uploads
 	private String m_sCreateItemName=null;
@@ -460,8 +460,8 @@ public class Document implements ErrorDetect,Cloneable
 			if(iCopySize<0) iCopySize = 0;
 			byte bufToProcess[] = new byte[iCopySize]; 
 			System.arraycopy(buffer, 0, bufToProcess, 0, iCopySize);
-			*/
-			
+			 */
+
 			if(iPos-2<0)
 			{
 				System.err.println("Document.java 465: processBuffer() iPos="+iPos + " NextBytes=" + Integer.toHexString(buffer[0]) + " " + Integer.toHexString(buffer[1])  + " " + Integer.toHexString(buffer[2]));
@@ -499,7 +499,7 @@ public class Document implements ErrorDetect,Cloneable
 		if(m_sSkipUntil.equals(BODY_START)) //must be a header
 		{
 			m_sSkipUntil = sBoundary;
-			ArrayList vHeader = new ArrayList();
+			ArrayList<String> vHeader = new ArrayList<String>();
 			String szLine;
 			byte bufToProcess[] = new byte[iPos];
 			System.arraycopy(buffer, 0, bufToProcess, 0, iPos);			
@@ -555,7 +555,7 @@ public class Document implements ErrorDetect,Cloneable
 	/**
 	 * Assume that if we have a content-type
 	 */
-	private boolean isMIMEFile(ArrayList v)
+	private boolean isMIMEFile(ArrayList<String> v)
 	{
 		//if(Util.getMIMELine(v, "Content-Type")==null)
 
@@ -1473,7 +1473,7 @@ public class Document implements ErrorDetect,Cloneable
 	public boolean setItemChoices(String paramItemName, String sNewChoices)
 	{
 		String sChoices[]=null;
-		ArrayList arr = puakma.util.Util.splitString(sNewChoices, ',');
+		ArrayList<String> arr = puakma.util.Util.splitString(sNewChoices, ',');
 		if(arr!=null) sChoices = puakma.util.Util.objectArrayToStringArray(arr.toArray());
 		return setItemChoices(paramItemName, sChoices);
 	}
@@ -1548,7 +1548,7 @@ public class Document implements ErrorDetect,Cloneable
 	 * Gets all the items on this document
 	 * @return an Enumeration of DocumentItem objects
 	 */
-	public Enumeration getAllItems()
+	public Enumeration<DocumentItem> getAllItems()
 	{
 		//pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "getAllItems()", pSystem);
 		return m_htItems.elements();
@@ -1566,7 +1566,7 @@ public class Document implements ErrorDetect,Cloneable
 	 * Gets all the parameters on this document
 	 * @return an Enumeration of Parameter objects
 	 */
-	public Enumeration getAllParameters()
+	public Enumeration<Parameter> getAllParameters()
 	{
 		return m_htParams.elements();
 	}
@@ -1605,7 +1605,7 @@ public class Document implements ErrorDetect,Cloneable
 	public StringBuilder toXML()
 	{
 		StringBuilder sbReturn = new StringBuilder(256);
-		Enumeration en = m_htItems.elements();
+		Enumeration<DocumentItem> en = m_htItems.elements();
 		while(en.hasMoreElements())
 		{
 			DocumentItem item = (DocumentItem)en.nextElement();
@@ -1768,7 +1768,7 @@ public class Document implements ErrorDetect,Cloneable
 			return false;
 		}
 		//finally write the attachments
-		Enumeration en = m_htItems.elements();
+		Enumeration<DocumentItem> en = m_htItems.elements();
 		while(en.hasMoreElements())
 		{
 			DocumentItem item = (DocumentItem)en.nextElement();
@@ -1791,7 +1791,7 @@ public class Document implements ErrorDetect,Cloneable
 						PreparedStatement prepStmt = cx.prepareStatement(szQuery);
 						prepStmt.setLong(1, lMailBodyID);
 						prepStmt.setString(2, sFileName);
-						
+
 						//pSystem.doInformation("sending file: "+f.getName() + " " + f.length() + "bytes", this);
 						FileInputStream fis = new FileInputStream(f);
 						prepStmt.setBinaryStream(3, fis, (int)f.length() );
@@ -1918,7 +1918,7 @@ public class Document implements ErrorDetect,Cloneable
 	/**
 	 * returns all cookies stored in a vector
 	 */
-	public Vector getAllCookies()
+	public Vector<Cookie> getAllCookies()
 	{
 		Vector<Cookie> vReturn = new Vector<Cookie>();
 		Enumeration<Cookie> en = m_htCookies.elements();
@@ -1942,8 +1942,9 @@ public class Document implements ErrorDetect,Cloneable
 	/**
 	 * Adds each cookie line to the HTTP header
 	 */
-	public void setCookiesInHTTPHeader(ArrayList vHTTPHeader)
+	public void setCookiesInHTTPHeader(ArrayList<String> vHTTPHeader)
 	{
+		if(vHTTPHeader==null) return;
 		Enumeration<Cookie> en = m_htCookies.elements();
 		while(en.hasMoreElements())
 		{

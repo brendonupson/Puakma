@@ -245,7 +245,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private Hashtable setupJNDIEnvironment(String szUserName, String szPassword)
 	{
-		Hashtable htJNDI = new Hashtable();		
+		Hashtable<String, String> htJNDI = new Hashtable<String, String>();		
 		htJNDI.put(Context.INITIAL_CONTEXT_FACTORY, CONTEXT_FACTORY);
 		//if(m_sLDAPHostConfigEntry!=null) htJNDI.put(Context.PROVIDER_URL, m_sLDAPHostConfigEntry);
 
@@ -286,9 +286,9 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		if(m_sLDAPHosts!=null) return m_sLDAPHosts;
 		if(m_sLDAPHostConfigEntry==null) m_sLDAPHostConfigEntry="";
 
-		ArrayList arr = Util.splitString(m_sLDAPHostConfigEntry, ',');
+		ArrayList<String> arr = Util.splitString(m_sLDAPHostConfigEntry, ',');
 
-		ArrayList arrParsedHosts = new ArrayList();
+		ArrayList<String> arrParsedHosts = new ArrayList<String>();
 		for(int i=0; i<arr.size(); i++)
 		{
 			String sHostURL = Util.trimSpaces((String) arr.get(i));

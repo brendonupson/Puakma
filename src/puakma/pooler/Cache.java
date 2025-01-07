@@ -194,7 +194,7 @@ public class Cache implements CacheableItem
 	 */
 	public String toString()
 	{
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		int iCount=0;
 		StringBuilder sb = new StringBuilder(256);
 		Enumeration en = m_htItems.elements();

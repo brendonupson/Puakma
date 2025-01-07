@@ -745,7 +745,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * @param m_environment_lines
 	 * @return
 	 */
-	private SessionContext getSession(ArrayList m_environment_lines)
+	private SessionContext getSession(ArrayList<String> m_environment_lines)
 	{
 		SessionContext sessCtx=null;
 
@@ -1212,8 +1212,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			return; //the action took care of everything
 		}
 
-		ArrayList extra_headers = new ArrayList();
-		Vector vExtraHeaders = docHTML.getExtraHeaders();
+		ArrayList<String> extra_headers = new ArrayList<String>();
+		Vector<String> vExtraHeaders = docHTML.getExtraHeaders();
 		if(vExtraHeaders!=null)
 		{
 			for(int i=0; i<vExtraHeaders.size(); i++)
@@ -1228,7 +1228,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		String sContentType = docHTML.getContentType();
 		if(sContentType!=null && sContentType.indexOf('\r')>=0)
 		{
-			ArrayList vSplit = Util.splitString(sContentType, "\r\n");
+			ArrayList<String> vSplit = Util.splitString(sContentType, "\r\n");
 			docHTML.setContentType((String) vSplit.get(0));
 			for(int i=1; i<vSplit.size(); i++)
 			{
@@ -2231,7 +2231,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					//determine the start range...
 					if(iEqualsPos>0) sRange = sRange.substring(iEqualsPos+1, sRange.length());                  
 
-					ArrayList arrRange = puakma.util.Util.splitString(sRange, ',');
+					ArrayList<String> arrRange = puakma.util.Util.splitString(sRange, ',');
 
 					if(arrRange.size()>1)
 					{

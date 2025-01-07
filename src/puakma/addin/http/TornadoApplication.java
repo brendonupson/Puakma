@@ -71,11 +71,11 @@ public class TornadoApplication implements ErrorDetect
 	private int m_iMaxConnectionCount = MAX_CONNECTIONS;
 	private int m_iPoolConnectionTimeoutMS = CONN_TIMEOUT;
 	private int m_iPoolConnectionExpireSeconds = CONN_EXPIRY;
-	private Hashtable m_htConnectionAttributeMap = new Hashtable();
-	private Hashtable m_htConnections = new Hashtable();
+	private Hashtable<String, HashMap<String, String>> m_htConnectionAttributeMap = new Hashtable<String, HashMap<String, String>>();
+	private Hashtable<Connection, String> m_htConnections = new Hashtable<Connection, String>();
 	private int m_iDataConnGetCount=0;
 	private int m_iDataConnReleaseCount=0;
-	private Hashtable m_htStringTable = new Hashtable(500);
+	private Hashtable<String, String> m_htStringTable = new Hashtable<String, String>(500);
 	private Locale m_applicationLocale = null;
 	private SharedActionClassLoader m_sacl = null;
 
@@ -235,7 +235,7 @@ public class TornadoApplication implements ErrorDetect
 
 		long lAppID = getApplicationID();
 		String sQuery = "SELECT DISTINCT RoleName FROM ROLE WHERE AppID="+lAppID;
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 
 		Connection cx=null;
 		Statement stmt = null;
@@ -299,7 +299,7 @@ public class TornadoApplication implements ErrorDetect
 		if(m_AppParams!=null) return m_AppParams;
 
 		long lAppID = getApplicationID();
-		ArrayList arr = new ArrayList();
+		ArrayList<Parameter> arr = new ArrayList<Parameter>();
 		String sQuery = "SELECT ParamName,ParamValue FROM APPPARAM WHERE AppID="+lAppID + " ORDER BY ParamName";
 
 		Connection cx=null;
@@ -343,7 +343,7 @@ public class TornadoApplication implements ErrorDetect
 	 */
 	public String[] getAllDesignElementNames(int iDesignType)
 	{      
-		ArrayList arr = new ArrayList();    
+		ArrayList<String> arr = new ArrayList<String>();    
 
 		long lAppID = getApplicationID();
 
@@ -621,7 +621,7 @@ public class TornadoApplication implements ErrorDetect
 		byte bufContent[] = new byte[0];
 		byte LINE_BREAK[] = Util.utf8FromString("\r\n\r\n");
 		String sPublicDir = m_pSystem.getSystemProperty("HTTPPublicDir");
-		ArrayList arrLines = Util.splitString(sInclude, '\n');
+		ArrayList<String> arrLines = Util.splitString(sInclude, '\n');
 		for(int i=0; i<arrLines.size(); i++)
 		{
 			String sLine = Util.trimChar((String)arrLines.get(i), new char[]{'\r', '\n', ' '});
@@ -1092,7 +1092,7 @@ public class TornadoApplication implements ErrorDetect
 		{
 			bFound = true;
 			//System.out.println("cache hit: getDataConnection(String sConnectionName) ");
-			HashMap hm = (HashMap)m_htConnectionAttributeMap.get(sKey);
+			HashMap<String, String> hm = m_htConnectionAttributeMap.get(sKey);
 			if(hm!=null)
 			{
 				sDriverClass = (String)hm.get("dbdriver");
@@ -1142,7 +1142,7 @@ public class TornadoApplication implements ErrorDetect
 					sUser = rs.getString("DBUserName");
 					sPW = m_pSystem.decodeValue(rs.getString("DBPassword"));
 
-					HashMap hm = new HashMap();				
+					HashMap<String, String> hm = new HashMap<String, String>();				
 					hm.put("dbdriver", sDriverClass);
 					hm.put("dburl", sDBURL);
 					hm.put("dburlptions", sDBURLOptions);
@@ -1339,9 +1339,9 @@ public class TornadoApplication implements ErrorDetect
 	 * 
 	 * @return
 	 */
-	public Vector getAllDataConnectionNames()
+	public Vector<String> getAllDataConnectionNames()
 	{
-		Vector vReturn = new Vector();
+		Vector<String> vReturn = new Vector<String>();
 		Connection cxSys=null;
 		PreparedStatement stmt = null;
 		ResultSet rs = null;

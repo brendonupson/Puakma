@@ -73,7 +73,7 @@ public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
 	private final String PUAKMA_VERSION="6.0.40";
-	private final int PUAKMA_BUILD=1099;
+	private final int PUAKMA_BUILD=1100;
 	private final String PUAKMA_BUILD_DATE="7 Jan 2025"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
@@ -518,7 +518,7 @@ public class pmaSystem implements ErrorDetect
 	/**
 	 * Return an ArrayList of session objects that match the username passed (common or canonical)
 	 */
-	public ArrayList getSessionsByUserName(String szWho)
+	public ArrayList<SessionContext> getSessionsByUserName(String szWho)
 	{
 		ArrayList<SessionContext> arr = new ArrayList<SessionContext>();
 		if(szWho==null) return arr;
@@ -628,7 +628,7 @@ public class pmaSystem implements ErrorDetect
 			{
 				String sLanguage = sDefaultLocale;
 				String sCountry = "";
-				ArrayList arr = Util.splitString(sDefaultLocale, '_');
+				ArrayList<String> arr = Util.splitString(sDefaultLocale, '_');
 				if(arr.size()>0) sLanguage = (String) arr.get(0);
 				if(arr.size()>1) sCountry = (String) arr.get(1);
 				pSession.setLocale(new Locale(sLanguage, sCountry));
@@ -680,7 +680,7 @@ public class pmaSystem implements ErrorDetect
 		{
 			File fSess = new File(sFileName);
 			FileOutputStream fout = new FileOutputStream(fSess);
-			Enumeration en = m_hSessionList.elements();           
+			Enumeration<pmaSession> en = m_hSessionList.elements();           
 			fout.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n".getBytes());
 			fout.write("<sessiondata>\r\n".getBytes());
 			while(en.hasMoreElements())
@@ -1044,7 +1044,7 @@ public class pmaSystem implements ErrorDetect
 	/**
 	 * Return all the session objects
 	 */
-	public Enumeration getSessionList()
+	public Enumeration<pmaSession> getSessionList()
 	{
 		pErr.doDebug(pmaLog.DEBUGLEVEL_FULL, "getSessionList()", this);
 		return m_hSessionList.elements();

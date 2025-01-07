@@ -148,7 +148,7 @@ public class TableManager implements ErrorDetect
 	public String[] getColumnNames()
 	{
 		if(m_docData==null) return new String[0];
-		ArrayList arr = new ArrayList(m_docData.getItemCount());
+		ArrayList<String> arr = new ArrayList<String>(m_docData.getItemCount());
 		Enumeration en = m_docData.getAllItems();
 		while(en.hasMoreElements())
 		{
@@ -1152,7 +1152,7 @@ public class TableManager implements ErrorDetect
 	{
 		Connection cx=null;    
 		String sCol_1, sCol_Alias;
-		ArrayList ar=null;
+		ArrayList<String> ar=null;
 		StringBuilder sb = new StringBuilder(50);
 		ResultSet rs = null;
 		Statement stmt = null;
@@ -1166,7 +1166,7 @@ public class TableManager implements ErrorDetect
 			int iColumnCount = rsmd.getColumnCount();
 			while(rs.next()) 
 			{
-				if(ar==null) ar = new ArrayList();
+				if(ar==null) ar = new ArrayList<String>();
 
 				if(iColumnCount>1)
 				{
@@ -1554,7 +1554,7 @@ public class TableManager implements ErrorDetect
 	 */
 	public static String[] getXMLColumnNames(StringBuilder sbXML)
 	{
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		try
 		{
 			ByteArrayInputStream is = new ByteArrayInputStream(sbXML.toString().getBytes());

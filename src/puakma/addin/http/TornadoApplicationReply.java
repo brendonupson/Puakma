@@ -8,7 +8,7 @@ public class TornadoApplicationReply
 {	
 	private int m_iHttpReplyCode=500;
 	private String m_sReplyMessage="";
-	private ArrayList m_arrExtraHeaders = new ArrayList();
+	private ArrayList<String> m_arrExtraHeaders = new ArrayList<String>();
 	private byte m_bufContent[] = null;
 	//private boolean m_bHasStreamed = false;
 	private String m_sContentType="text/html";
