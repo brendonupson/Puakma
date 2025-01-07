@@ -41,9 +41,8 @@ public class DesignElement implements Cloneable, CacheableItem
 	private String m_sContentType;
 	private java.util.Date m_dtLastModified;
 	public String m_sFullClassName=null; //store the full class name so we don't have to keep parsing the binary class data (see ActionClassLoader)
-	private ArrayList m_ParsedDocumentParts=null;  
-	//private Hashtable htParameters=new Hashtable();
-	private ArrayList m_arrParameters=new ArrayList();
+	private ArrayList m_ParsedDocumentParts=null;  //HTMLControl or String
+	private ArrayList<Parameter> m_arrParameters=new ArrayList<Parameter>();
 
 	private Date m_dtLastAccess = new Date();
 

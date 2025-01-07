@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.0.39";
+	private final String PUAKMA_VERSION="6.0.40";
 	private final int PUAKMA_BUILD=1099;
-	private final String PUAKMA_BUILD_DATE="6 Jan 2025"; 
+	private final String PUAKMA_BUILD_DATE="7 Jan 2025"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
@@ -95,14 +95,14 @@ public class pmaSystem implements ErrorDetect
 	private long m_lNextSessionID=0;
 	private FileInputStream m_fs;
 	private int m_iDebugLevel=0;
-	private Hashtable m_hSessionList=new Hashtable(500);
-	private Hashtable m_htExcludeAddresses=new Hashtable();
+	private Hashtable<String, pmaSession> m_hSessionList = new Hashtable<String, pmaSession>(500);
+	private Hashtable<String, String> m_htExcludeAddresses=new Hashtable<String, String>();
 	private int m_iMaxSessions=-1; 
 	private int m_iSessionTimeout=90; //90 minute default
 	private int m_iAnonymousSessionTimeout=90;
 	private boolean m_bRunning=true;
 	private long m_lUniqueNumber=0; //do NOT access this property!! see getNextUniqueNumber()
-	private Vector m_vAuthenticators = new Vector();
+	private Vector<pmaAuthenticator> m_vAuthenticators = new Vector<pmaAuthenticator>();
 	private pmaServer m_pServer = null;
 	private boolean m_bLogSessions=false;
 	private boolean m_bUseExactAuthenticator=false; 
@@ -113,7 +113,7 @@ public class pmaSystem implements ErrorDetect
 	//private Hashtable m_htActionClassLoaders = new Hashtable();
 	private PropertyEncoder m_propEnc;
 	//private Cache m_cacheObject;
-	private Hashtable m_htGlobalObjects = new Hashtable();
+	private Hashtable<String, Object> m_htGlobalObjects = new Hashtable<String, Object>();
 
 	private int m_iSystemConnGetCount=0;
 	private int m_iSystemConnReleaseCount=0;
@@ -470,7 +470,7 @@ public class pmaSystem implements ErrorDetect
 		if(m_hSessionList.containsKey(sess.getFullSessionID()))
 		{
 			boolean bUpdate = true;
-			pmaSession sessOld = (pmaSession)m_hSessionList.get(sess.getFullSessionID());
+			pmaSession sessOld = m_hSessionList.get(sess.getFullSessionID());
 			if(sessOld!=null)
 			{
 				//don't update if the transaction is older than the session we already have
@@ -520,17 +520,17 @@ public class pmaSystem implements ErrorDetect
 	 */
 	public ArrayList getSessionsByUserName(String szWho)
 	{
-		ArrayList arr = new ArrayList();
+		ArrayList<SessionContext> arr = new ArrayList<SessionContext>();
 		if(szWho==null) return arr;
 
 		X500Name nmWho = new X500Name(szWho);
 		//String sWhoLow = nmWho.getCanonicalName().toLowerCase();
 
-		Enumeration eSessions = m_hSessionList.elements();
+		Enumeration<pmaSession> eSessions = m_hSessionList.elements();
 
 		while(eSessions.hasMoreElements())
 		{
-			pmaSession sess = (pmaSession)eSessions.nextElement();
+			pmaSession sess = eSessions.nextElement();
 			X500Name nmSession = new X500Name(sess.userName);
 			if(nmSession.equals(nmWho) || nmSession.getCommonName().toLowerCase().equals(nmWho.getCommonName().toLowerCase()))
 			{
@@ -546,11 +546,11 @@ public class pmaSystem implements ErrorDetect
 	 */
 	public void clearAllSessionObjectsWithClassLoader()
 	{      
-		Enumeration eSessions = m_hSessionList.elements();
+		Enumeration<pmaSession> eSessions = m_hSessionList.elements();
 
 		while(eSessions.hasMoreElements())
 		{
-			pmaSession sess = (pmaSession)eSessions.nextElement();
+			pmaSession sess = eSessions.nextElement();
 			Hashtable ht = sess.getAllSessionObjects();
 			Enumeration keys = ht.keys();
 			while(keys.hasMoreElements())

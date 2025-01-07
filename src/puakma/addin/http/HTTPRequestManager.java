@@ -32,7 +32,6 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.SocketException;
 import java.net.URLDecoder;
 import java.security.Principal;
 import java.text.SimpleDateFormat;
@@ -128,7 +127,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private String m_sBaseRef="";
 	private long m_lStart = System.currentTimeMillis();
 	//private java.util.Date m_dtStart = new java.util.Date(); //timestamp object creation so we can work out transaction time
-	private ArrayList m_environment_lines = new ArrayList(); // Stores all other data lines sent to us
+	private ArrayList<String> m_environment_lines = new ArrayList<String>(); // Stores all other data lines sent to us
 	//instance of any running action
 	private ActionRunnerInterface m_action = null;
 
@@ -462,7 +461,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(sessCtx == null)
 			{
 				m_pSystem.doError("HTTPRequest.SessionLimitReached", new String[]{m_pSystem.getSessionCount()+""}, this);
-				ArrayList extra_headers = new ArrayList();
+				ArrayList<String> extra_headers = new ArrayList<String>();
 				String szRedirect = m_http_server.m_sHTTPMaxSessionRedirect;
 				if(szRedirect.indexOf("://")>0 && szRedirect.toLowerCase().startsWith("http"))
 				{
@@ -578,7 +577,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doOptions()", this);
 
-		ArrayList extra_headers = new ArrayList();
+		ArrayList<String> extra_headers = new ArrayList<String>();
 
 		if(document_path!=null && !document_path.equals("*")) //document_path==null || document_path.length()==0 || document_path.equals("*"))
 		{
@@ -601,7 +600,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(extra_headers.size()==0)
 		{
 			//Look for custom options from file: ../config/http-OPTIONS.config
-			ArrayList serverOptions = m_http_server.getHttpOptions();
+			ArrayList<String> serverOptions = m_http_server.getHttpOptions();
 			if(serverOptions!=null && serverOptions.size()>0)
 			{				
 				extra_headers.addAll(serverOptions);
@@ -858,7 +857,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * @param v
 	 * @return
 	 */
-	private String getHost(ArrayList vHeaders)
+	private String getHost(ArrayList<String> vHeaders)
 	{
 		String sReturn = Util.getMIMELine(vHeaders, "X-Forwarded-Host"); //did we come through a proxy?
 		if(sReturn==null) return Util.getMIMELine(vHeaders, "Host");
@@ -1058,7 +1057,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					String sURL = szDefaultURL.toLowerCase();
 					if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect
 					{
-						ArrayList extra_headers = new ArrayList();
+						ArrayList<String> extra_headers = new ArrayList<String>();
 						extra_headers.add("Location: " + szDefaultURL);
 						sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, null, null);
 						return;
@@ -1077,7 +1076,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		String szRedirectURL = m_http_server.getDefaultHostURL(document_path);
 		if(szRedirectURL!=null)
 		{
-			ArrayList extra_headers = new ArrayList();
+			ArrayList<String> extra_headers = new ArrayList<String>();
 			String sURL = szRedirectURL.toLowerCase();
 			if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect
 			{          
@@ -1142,7 +1141,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					document_path = rPath.getPathToApplication() + '/' + szDefaultOpen.substring(0, szDefaultOpen.length());
 				document_path += rPath.Parameters;
 				rPath = new RequestPath(document_path);
-				ArrayList extra_headers = new ArrayList();
+				ArrayList<String> extra_headers = new ArrayList<String>();
 				String sProto = null;
 				if(m_bSecure) sProto = "https://"; else sProto = "http://"; //assume must be http of some sort
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);				
@@ -1157,7 +1156,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(sForceSecureConnectionParam != null && sForceSecureConnectionParam.equals("1"))
 			{
 				m_pSystem.doDebug(pmaLog.DEBUGLEVEL_STANDARD, "Secure connection is required: '%s'", new String[]{document_path}, m_pSession);
-				ArrayList extra_headers = new ArrayList();
+				ArrayList<String> extra_headers = new ArrayList<String>();
 				String sProto = "https://";
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);				
 				sendHTTPResponse(RET_SEEOTHER, "SSL Required", extra_headers, HTTP_VERSION, "text/html", null);
@@ -1657,7 +1656,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		}
 		catch(Exception uee){}
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "serveLocalFile()", this);
-		ArrayList extra_headers = new ArrayList();
+		ArrayList<String> extra_headers = new ArrayList<String>();
 		if(m_pSession!=null) extra_headers.add(m_pSession.getCookieString());
 		//long lStart = System.currentTimeMillis();
 		String sEnforcedPath = enforceDocumentRoot(document_path);
@@ -1748,7 +1747,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			sQueryString= sRequestURI.substring(iPos+1);
 		}        
 
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		arr.add("SERVER_SOFTWARE="+m_pSystem.getVersionString());
 		arr.add("SERVER_NAME="+m_pSystem.getSystemHostName());
 		arr.add("GATEWAY_INTERFACE=CGI/1.1");
@@ -1790,10 +1789,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 *
 	 * @param fToServe
 	 */
-	private void serveFile(int iErrCode, File fToServe, ArrayList extra_headers)
+	private void serveFile(int iErrCode, File fToServe, ArrayList<String> extra_headers)
 	{
 		//final int SECONDS_IN_DAY = 86400;
-		if(extra_headers==null) extra_headers = new ArrayList();
+		if(extra_headers==null) extra_headers = new ArrayList<String>();
 		String sMimeType = determineMimeType(fToServe.getAbsolutePath());
 		java.util.Date dtLastModified = new java.util.Date( fToServe.lastModified() );
 		if(!hasResourceChanged(dtLastModified))
@@ -2039,11 +2038,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 *                           method would send by default.
 	 */
 	private void sendHTTPResponse(int http_code, String http_code_string,
-			ArrayList extra_headers, String http_version,
+			ArrayList<String> extra_headers, String http_version,
 			String content_type, byte[] http_response_body)
 	{
 
-		if(extra_headers==null) extra_headers = new ArrayList();
+		if(extra_headers==null) extra_headers = new ArrayList<String>();
 		if(null==http_response_body)
 		{
 			if((http_code>=300 || http_code<400))
@@ -2106,14 +2105,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * This is a stream and file version for sending BIG files
 	 */
 	private void serveFileOrStream(int http_code, String http_code_string,
-			ArrayList extra_headers, String http_version,
+			ArrayList<String> extra_headers, String http_version,
 			String content_type, long lStreamLengthBytes, InputStream is, File fOriginal)
 	{
 		final int MAX_CHUNK = 15000; //200000; //8192; //size of data chunks, 1500mtu?		
 		boolean bIsUsingTempFile = is!=null && fOriginal==null;
 		File fTemp=null;
 		File fByteServe=null;
-		ArrayList out_lines = new ArrayList();
+		ArrayList<String> out_lines = new ArrayList<String>();
 
 
 
@@ -2124,7 +2123,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		 */
 		if(m_bSendSessionCookie) 
 		{         
-			if(extra_headers==null) extra_headers = new ArrayList();
+			if(extra_headers==null) extra_headers = new ArrayList<String>();
 			String sPath = getCookiePath();
 
 			extra_headers.add(m_pSession.getCookieString(sPath, getCookieDomain()));
@@ -2502,7 +2501,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * Should this request be byte served or not.
 	 * @return null if this is not a byterange serve
 	 */
-	private String getByteRangeServe(ArrayList arrHeaders)
+	private String getByteRangeServe(ArrayList<String> arrHeaders)
 	{
 		String sRange = puakma.util.Util.getMIMELine(arrHeaders, "Content-Range");
 		if(sRange==null) sRange = puakma.util.Util.getMIMELine(arrHeaders, "Range");
@@ -3081,7 +3080,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		//long lStart = System.currentTimeMillis();
 		//m_pSystem.doDebug(0, "A. doWidgetRequest() " + (System.currentTimeMillis()-m_lStart) + "ms", this);
-		ArrayList extra_headers = new ArrayList();
+		ArrayList<String> extra_headers = new ArrayList<String>();
 		String sAuth="WWW-Authenticate: Basic realm=\"BusinessWidget\"";
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doWidgetRequest(%s)", new String[]{m_sInboundPath}, this);
 

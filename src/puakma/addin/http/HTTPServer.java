@@ -984,7 +984,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 		return m_bShouldDisableBasicAuth;
 	}
 
-	public ArrayList getHttpOptions() 
+	public ArrayList<String> getHttpOptions() 
 	{
 		return m_Parent.getHttpOptions();
 	}

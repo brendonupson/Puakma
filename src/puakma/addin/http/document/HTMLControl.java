@@ -171,7 +171,7 @@ public class HTMLControl
 		}
 
 		HTMLTagTokenizer st = new HTMLTagTokenizer(sTagHTML);
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		while(st.hasMoreTokens())
 		{
 			String szItem = (String)st.nextElement();
@@ -184,7 +184,7 @@ public class HTMLControl
 	/**
 	 *
 	 */
-	private void processItem(String szType, ArrayList al)
+	private void processItem(String szType, ArrayList<String> al)
 	{
 		String szSize;
 		Type = getTypeFromString(szType);
@@ -348,7 +348,7 @@ public class HTMLControl
 
 
 		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		while(st.hasMoreTokens())
 		{
 			String szItem = (String)st.nextElement();      
@@ -418,7 +418,7 @@ public class HTMLControl
 		 */
 		boolean bFound = false;
 		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		while(st.hasMoreTokens())
 		{
 			String sItem = (String)st.nextElement();   
@@ -1142,7 +1142,7 @@ public class HTMLControl
 		if(sChoices!=null && sChoices.length>0)
 		{
 			HTMLControlChoice choices[] = HTMLControlChoice.makeChoiceArray(sChoices, null);
-			ArrayList arrItems = new ArrayList(choices.length);
+			ArrayList<String> arrItems = new ArrayList<String>(choices.length);
 			try{ iCols=Integer.parseInt(Columns); }catch(Exception e){}
 			if(iCols<1) iCols = 1;
 

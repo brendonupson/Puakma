@@ -53,7 +53,7 @@ public class HTMLDocument extends Document implements Cloneable
 	private boolean m_bHasRichItems=false;
 	public DesignElement designObject=new DesignElement();
 	private HTTPSessionContext m_sess;
-	private Vector m_vExtraHeaders=null;  
+	private Vector<String> m_vExtraHeaders=null;  
 	private boolean m_bDataPosted = false;
 	private ArrayList m_arrParsedDocParts = null;
 
@@ -1123,7 +1123,7 @@ public class HTMLDocument extends Document implements Cloneable
 		String sNewEntry = sName + ": " + sValue;
 		if(m_vExtraHeaders==null) 
 		{
-			m_vExtraHeaders = new Vector();
+			m_vExtraHeaders = new Vector<String>();
 			m_vExtraHeaders.add(sNewEntry);
 			return;
 		}

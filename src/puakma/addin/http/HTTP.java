@@ -25,7 +25,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
-import java.io.InputStreamReader;
 import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -63,11 +62,9 @@ public class HTTP extends pmaAddIn
 
 	public static String DEFAULT_CHAR_ENCODING = "UTF-8";//"ISO-8859-1";
 	private pmaAddInStatusLine m_pStatus;
-	private Vector m_Listeners = new Vector();
-	//private int m_iListenerCount=0;
-	//public Cache m_cacheDesign;
-	//public Cache m_cacheObject;
-	public Hashtable m_htAppAlwaysLoad=new Hashtable();
+	private Vector<HTTPServer> m_Listeners = new Vector<HTTPServer>();
+	
+	//public Hashtable m_htAppAlwaysLoad=new Hashtable(); //unused??
 	private Properties m_propHostMap = new Properties();
 	private boolean m_bDebug = false;
 	private boolean m_bUseSingleDBPool=true;
@@ -77,7 +74,7 @@ public class HTTP extends pmaAddIn
 	private FileOutputStream m_fout;
 	private Calendar m_calOutFile=Calendar.getInstance();
 	private SimpleDateFormat m_simpledf = new SimpleDateFormat("yyyyMMdd");
-	private ArrayList m_alMimeExcludes = new ArrayList();
+	private ArrayList<String> m_alMimeExcludes = new ArrayList<String>();
 	private boolean m_bAllowByteServing=false;
 	private boolean m_bGenerateETags=false;  
 	private HTTPLogger m_httpLog = new HTTPLogger(null);
@@ -87,7 +84,7 @@ public class HTTP extends pmaAddIn
 	private boolean m_bNoReverseDNS = false;
 	//private String[] m_sAllowMethods = new String[] {"PUT","DELETE"}; //defaults
 	private String[] m_sAllowMethods = new String[] {"CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "TRACE"}; //defaults
-	private ArrayList m_httpOptions = new ArrayList();
+	private ArrayList<String> m_httpOptions = new ArrayList<String>();
 
 	/**
 	 * This method is called by the pmaServer object
@@ -236,7 +233,7 @@ public class HTTP extends pmaAddIn
 		catch(Exception e){}
 	}
 	
-	public ArrayList getHttpOptions() 
+	public ArrayList<String> getHttpOptions() 
 	{
 		return m_httpOptions;
 	}
@@ -454,10 +451,10 @@ public class HTTP extends pmaAddIn
 
 
 
-		Enumeration en = m_Listeners.elements();
+		Enumeration<HTTPServer> en = m_Listeners.elements();
 		while(en.hasMoreElements())
 		{
-			HTTPServer hs = (HTTPServer)en.nextElement();
+			HTTPServer hs = en.nextElement();
 			sReturn += hs.tell(sCommand);
 		}
 
