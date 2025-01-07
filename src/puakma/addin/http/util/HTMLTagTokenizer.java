@@ -1,7 +1,6 @@
 package puakma.addin.http.util;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.ListIterator;
 
 /** ***************************************************************
@@ -36,8 +35,9 @@ public class HTMLTagTokenizer
 {
 	private String m_sRemainder;
 	private int m_iPos = 0;
-	private List m_arrStringTokens;
-	private ListIterator m_iterTokens;
+	//private List m_arrStringTokens;
+	private ArrayList<String> m_arrStringTokens = new ArrayList<String>();
+	private ListIterator<String> m_iterTokens;
 
 	/**
 	 * 
@@ -46,8 +46,7 @@ public class HTMLTagTokenizer
 	public HTMLTagTokenizer(String sTag)
 	{
 		m_sRemainder = sTag;
-
-		m_arrStringTokens = new ArrayList();
+		//m_arrStringTokens = new ArrayList();
 
 		populateTokenList();
 

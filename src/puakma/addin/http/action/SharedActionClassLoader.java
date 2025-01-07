@@ -52,10 +52,10 @@ public class SharedActionClassLoader extends ClassLoader
 	private String m_sApp;
 	private String m_sBasePath;  
 	private SystemContext m_pSystem;
-	private Hashtable m_cache=new Hashtable();
-	private Hashtable m_loadedDesigns=new Hashtable();  
+	private Hashtable<String, ClassCacheEntry> m_cache=new Hashtable<String, ClassCacheEntry>(30);
+	private Hashtable<String, String> m_loadedDesigns=new Hashtable<String, String>(30);  
 	//private int m_iTypeToLoad = 0;
-	private Vector m_vJars = new Vector(); //all File objects for jar files
+	private Vector<File> m_vJars = new Vector<File>(); //all File objects for jar files
 
 	public final static String LIBRARY="UseLibrary";
 
@@ -174,7 +174,7 @@ public class SharedActionClassLoader extends ClassLoader
 						des.m_sFullClassName = cd.m_FullName;
 						sClassName = cd.m_FullName;
 					}
-					
+
 				}   
 
 				if(des.m_sFullClassName!=null)
@@ -207,7 +207,7 @@ public class SharedActionClassLoader extends ClassLoader
 			return cache_entry.m_sClassName;
 		}
 
-		Enumeration en = m_cache.elements();
+		Enumeration<ClassCacheEntry> en = m_cache.elements();
 		while(en.hasMoreElements())
 		{
 			ClassCacheEntry cache_entry = (ClassCacheEntry)en.nextElement();
@@ -232,17 +232,17 @@ public class SharedActionClassLoader extends ClassLoader
 		return loadClass(sActionClassName, true);
 	}
 
-	
+
 	protected Class findClass(String className) 
 	{
 		Class c = null;
 		try
 		{
-		c = loadClass(className, false);
+			c = loadClass(className, false);
 		}
 		catch(Exception e)
 		{}
-		
+
 		return c;
 	}
 
