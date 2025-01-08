@@ -120,7 +120,7 @@ public class BOOSTERTransferWorker
 	 */
 	public void run()
 	{
-		ArrayList environment_lines = new ArrayList();
+		ArrayList<String> environment_lines = new ArrayList<String>();
 		boolean bFirstTime = true;        
 		while(m_bRunning)
 		{
@@ -194,7 +194,7 @@ public class BOOSTERTransferWorker
 						{
 							String sContentType = item.getContentType();                        
 							bShouldCompress = m_Parent.shouldGZipOutput(m_sURI, sContentType);
-							ArrayList out_lines = item.getResponseHeaders();
+							ArrayList<String> out_lines = item.getResponseHeaders();
 							Util.replaceHeaderValue(out_lines, "Host", m_sRequestedHost);
 							m_Clientos.write(item.getHTTPReply(bShouldCompress, m_sVia, m_bCanKeepAlive));
 							m_Clientos.flush();
@@ -361,7 +361,7 @@ public class BOOSTERTransferWorker
 	 * 
 	 * @param environment_lines
 	 */
-	private void addSessionIDToHeaders(ArrayList environment_lines) 
+	private void addSessionIDToHeaders(ArrayList<String> environment_lines) 
 	{
 		//if we have a principal we want to send the session on.
 		if(m_Parent.m_session==null || m_Parent.getPrincipal()==null) return;
@@ -388,24 +388,9 @@ public class BOOSTERTransferWorker
 
 	}
 
-	public static void main(String args[])
-	{
-		ArrayList arr = new ArrayList();
-		//String sLine = "Cookie: __utma=153305656.818921236.1413517754.1413517754.1413517754.1; __utmz=153305656.1413517754.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _booster_sid=1-1494450F96B-149445190DB; _pma_sess_id=DD-14944331763-14944519711; LtpaToken=AAECAzU0NEFENTY2NTQ0QjI5QzZBbm9ueW1vdXPclYJvaYjyjqlR0ujm08/4wXezxw==";
-		String sLine = "Cookie: __utma=153305656.818921236.1413517754.1413517754.1413517754.1; __utmz=153305656.1413517754.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _booster_sid=1-1494450F96B-149445190DB; _xpma_sess_id=DD-14944331763-14944519711; LtpaToken=AAECAzU0NEFENTY2NTQ0QjI5QzZBbm9ueW1vdXPclYJvaYjyjqlR0ujm08/4wXezxw==";
-		//String sLine = "Cookie: __utma=153305656.818921236.1413517754.1413517754.1413517754.1; __utmz=153305656.1413517754.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _booster_sid=1-1494450F96B-149445190DB; _pma_sess_id=DD-14944331763-14944519711";
-		arr.add("Date: x");
-		arr.add("Content-Type: text/plain");
-		arr.add(sLine);
-		arr.add("Server: x");
 
-		replaceCookieValue(arr, "_pma_sess_id", "fred");
-		//replaceCookieValue(arr, "_pma_sess_id", null);
-		
-		dumpEnv(arr);
-	}
 
-	private static void replaceCookieValue(ArrayList lines, String sCookieName, String sValue) 
+	private static void replaceCookieValue(ArrayList<String> lines, String sCookieName, String sValue) 
 	{		
 		boolean bFound = false;
 		for(int i=0; i<lines.size(); i++)
@@ -454,27 +439,18 @@ public class BOOSTERTransferWorker
 	}
 
 
-	private static void dumpEnv(ArrayList lines) 
-	{
-		System.out.println("---- START ----");
-		for(int i=0; i<lines.size(); i++)
-		{
-			System.out.println(lines.get(i));
-		}
-		System.out.println("---- END ----");
-	}
 
 
 	/**
 	 * Force the browser to use SSL if that is what is set in booster.config
 	 */
-	private void checkForForceSSL(ArrayList environment_lines)
+	private void checkForForceSSL(ArrayList<String> environment_lines)
 	{
 		if(m_Parent.isSecureConnection()) return; //connection already secure, so ignore
 
 		if(m_Parent.shouldForceClientSSL(m_sRequestedHost))
 		{
-			ArrayList out_lines = new ArrayList();
+			ArrayList<String> out_lines = new ArrayList<String>();
 			out_lines.add("Host: "+m_sRequestedHost);
 			out_lines.add("Location: https://"+m_sRequestedHost + m_sURI);
 
@@ -490,10 +466,10 @@ public class BOOSTERTransferWorker
 	/**
 	 * tell the client that the resource in the cache has not changed
 	 */
-	private void sendNotChanged(ArrayList environment_lines, boolean bKeepAlive)
+	private void sendNotChanged(ArrayList<String> environment_lines, boolean bKeepAlive)
 	{
 		//System.out.println("not changed");
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		arr.add("X-Cache-Hit: BOOSTER-Cache");
 		if(bKeepAlive) 
 			arr.add("Connection: keep-alive");
@@ -503,7 +479,7 @@ public class BOOSTERTransferWorker
 		sendHTTPResponse(304, "Not Modified", arr, null, null, true);
 		if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Sent 304 (Not Modified) from cache: "+m_sURI, m_Parent);
 		//StatisticEntry stat = new StatisticEntry(m_Parent.getMimeExcludes(), m_sRequestLine, "text/html", 0, m_iInboundSize, 304, m_Parent.getClientIPAddress(), m_sRequestedHost, m_sUserName, m_sUserAgent, m_sReferer, m_sRequestedHost, m_lTotalTime, m_Parent.getBoosterIPAddress(), m_Parent.getServerPort(), m_sMethod);
-		ArrayList out_lines = new ArrayList();
+		ArrayList<String> out_lines = new ArrayList<String>();
 		out_lines.add("Host: "+m_sRequestedHost);
 
 		if(m_bSendSessionCookie && m_Parent.m_session!=null)
@@ -526,7 +502,7 @@ public class BOOSTERTransferWorker
 	/**
 	 * bIsClientConnection=true means we are reading from the client
 	 */
-	private void processDataPackage(long lContentLength, ArrayList environment_lines, String sContentType, boolean bIsClientConnection) throws Exception
+	private void processDataPackage(long lContentLength, ArrayList<String> environment_lines, String sContentType, boolean bIsClientConnection) throws Exception
 	{
 		if(m_Parent.isDebug())
 			m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" processDataPackage()", m_Parent);
@@ -681,7 +657,7 @@ public class BOOSTERTransferWorker
 	 * has already compressed it. We should store items in the cache compressed to save memory.
 	 *
 	 */
-	private void addToCache(byte[] bufCacheable, ArrayList environment_lines, boolean bCacheIsCompressed, String sContentType)
+	private void addToCache(byte[] bufCacheable, ArrayList<String> environment_lines, boolean bCacheIsCompressed, String sContentType)
 	{
 		//if(!(bufCacheable!=null && bufCacheable.length>0 && iReplyCode==200)) return;        
 
@@ -702,7 +678,7 @@ public class BOOSTERTransferWorker
 	/**
 	 *
 	 */
-	private void sendHeaders(ArrayList environment_lines, boolean bIsClientConnection) throws Exception
+	private void sendHeaders(ArrayList<String> environment_lines, boolean bIsClientConnection) throws Exception
 	{
 		if(m_Parent.isDebug()) m_Parent.m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, this.m_lRequestID+" Sending headers. ToClient="+bIsClientConnection, m_Parent);
 		StringBuilder sbOut = new StringBuilder(512); 
@@ -810,7 +786,7 @@ public class BOOSTERTransferWorker
 	/**
 	 * Read the http headers and return the content length
 	 */
-	private long readHeaders(ArrayList environment_lines, boolean bIsClientConnection) throws Exception
+	private long readHeaders(ArrayList<String> environment_lines, boolean bIsClientConnection) throws Exception
 	{
 		long lContentLength=0;                 
 		//BufferedReader is=null;
@@ -986,7 +962,7 @@ public class BOOSTERTransferWorker
 	/**
 	 * try to locate the session object based on the session id
 	 */
-	private SessionContext getSession(ArrayList environment_lines)
+	private SessionContext getSession(ArrayList<String> environment_lines)
 	{        
 		String sSessionID = HTTPServer.getCurrentSessionID(BOOSTER.SESSIONID_LABEL, environment_lines); 		
 		if(sSessionID!=null && sSessionID.length()>0)
@@ -1008,7 +984,7 @@ public class BOOSTERTransferWorker
 	/**
 	 *
 	 */
-	private boolean customHTTPHeaderProcessing(ArrayList environment_lines)
+	private boolean customHTTPHeaderProcessing(ArrayList<String> environment_lines)
 	{
 		String sProcessors[] = m_Parent.getCustomHeaderProcessors();
 		if(sProcessors==null) return false;
@@ -1051,7 +1027,7 @@ public class BOOSTERTransferWorker
 	 *
 	 */
 	public void sendHTTPResponse(int http_code, String http_code_string,
-			ArrayList extra_headers, 
+			ArrayList<String> extra_headers, 
 			String content_type, byte[] http_response_body, boolean bIsClientConnection)
 	{
 		if(null == http_response_body)
@@ -1070,7 +1046,7 @@ public class BOOSTERTransferWorker
 	 * This is a stream version for sending BIG files
 	 */
 	public void sendHTTPResponse(int http_code, String http_code_string,
-			ArrayList extra_headers, String content_type, 
+			ArrayList<String> extra_headers, String content_type, 
 			long lStream, InputStream is, boolean bIsClientConnection)
 	{     
 		BufferedOutputStream os=null;
@@ -1170,7 +1146,7 @@ public class BOOSTERTransferWorker
 	 */
 	public void sendNoHostAvailableMessage()
 	{
-		ArrayList arrToClient = new ArrayList();
+		ArrayList<String> arrToClient = new ArrayList<String>();
 
 		File f = m_Parent.getUnavailableFile();         
 		if(f==null || !f.exists() || !f.isFile())
@@ -1190,7 +1166,7 @@ public class BOOSTERTransferWorker
 	/**
 	 * Serve a file from the local filesystem
 	 */
-	private void serveLocalFile(File fToServe, ArrayList arrToClient)
+	private void serveLocalFile(File fToServe, ArrayList<String> arrToClient)
 	{
 
 		String sContentType=m_Parent.getFileMimeType(fToServe.getName());
@@ -1211,7 +1187,7 @@ public class BOOSTERTransferWorker
 	/**
 	 * "HTTP/1.1 302 Found"
 	 */
-	private int getReplyCode(ArrayList environment_lines)
+	private int getReplyCode(ArrayList<String> environment_lines)
 	{
 		int iReturn=200;
 		if(environment_lines==null || environment_lines.size()==0) return -1;
@@ -1231,7 +1207,7 @@ public class BOOSTERTransferWorker
 	/**
 	 *
 	 */
-	private void replaceLocationHeader(ArrayList environment_lines)
+	private void replaceLocationHeader(ArrayList<String> environment_lines)
 	{
 		String sLocation = Util.getMIMELine(environment_lines, "Location");
 		if(sLocation==null) return;

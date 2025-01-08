@@ -176,7 +176,7 @@ public class StringUtil
 	{
 		//TODO needs to take into account nested functions...
 		if(sInput==null || sSeperator==null) return null;
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 
 		int iPos = sInput.indexOf(sSeperator);
 		while(iPos>=0)

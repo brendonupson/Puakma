@@ -56,14 +56,14 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 	public pmaThreadPoolManager m_tpm;
 
 
-	private Vector m_Listeners = new Vector();
+	private Vector<CLUSTERListener> m_Listeners = new Vector<CLUSTERListener>();
 	private boolean m_bDebug = false;
 	private pmaAddInStatusLine m_pStatus;
 	private String m_sClusterMemberships="";
-	private ArrayList m_alClusterMemberships = new ArrayList();
+	private ArrayList<String> m_alClusterMemberships = new ArrayList<String>();
 	private String m_sClusterServers="";
-	private ArrayList m_alClusterServers = new ArrayList();
-	private ArrayList m_alAllowList;
+	private ArrayList<String> m_alClusterServers = new ArrayList<String>();
+	private ArrayList<String> m_alAllowList;
 
 	private CLUSTERReconnectThread m_crt;
 	private boolean m_bConnectInProgress=false;
@@ -88,12 +88,12 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 
 		m_sClusterMemberships = m_pSystem.getSystemProperty("CLUSTERMember");
 		m_alClusterMemberships = Util.splitString(m_sClusterMemberships, ',');
-		if(m_alClusterMemberships==null) m_alClusterMemberships=new ArrayList();
+		if(m_alClusterMemberships==null) m_alClusterMemberships=new ArrayList<String>();
 
 
 		m_sClusterServers = m_pSystem.getSystemProperty("CLUSTERServers");
 		m_alClusterServers = Util.splitString(m_sClusterServers, ',');
-		if(m_alClusterServers==null) m_alClusterServers=new ArrayList();
+		if(m_alClusterServers==null) m_alClusterServers=new ArrayList<String>();
 
 		String sAllow = m_pSystem.getSystemProperty("CLUSTERAllow");
 		m_alAllowList = Util.splitString(sAllow, ',');
@@ -207,7 +207,7 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 		{
 			if(m_bSynchOnConnect) 
 			{
-				ArrayList arrHeaders = getStandardHTTPHeader(true);
+				ArrayList<String> arrHeaders = getStandardHTTPHeader(true);
 				arrHeaders.add("Request-Session: "+SESSION_WILDCARD);				
 				cThread.sendData(arrHeaders, null);
 			}
@@ -260,9 +260,9 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 
 	}
 
-	public ArrayList getStandardHTTPHeader(boolean bKeepAlive)
+	public ArrayList<String> getStandardHTTPHeader(boolean bKeepAlive)
 	{
-		ArrayList arHeaders = new ArrayList();
+		ArrayList<String> arHeaders = new ArrayList<String>();
 		arHeaders.add("CLUSTER " + m_sClusterMemberships);
 		if(bKeepAlive)
 			arHeaders.add("Connection: Keep-Alive");
@@ -283,7 +283,7 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 	{
 		if(isDebug()) m_pSystem.doDebug(0, "Synch all sessions and servers", this);
 		Vector vClusterMates = m_tpm.getActiveObjects();
-		ArrayList arHeaders = getStandardHTTPHeader(true);
+		ArrayList<String> arHeaders = getStandardHTTPHeader(true);
 		arHeaders.add("Request-Session: *");
 		for(int i=0; i<vClusterMates.size(); i++)
 		{
@@ -787,9 +787,9 @@ public class CLUSTER extends pmaAddIn implements ErrorDetect
 	 * get a list of the hosts supposed to be in this cluster
 	 * @return
 	 */
-	public ArrayList getClusterServerList()
+	public ArrayList<String> getClusterServerList()
 	{
-		return (ArrayList)m_alClusterServers.clone();
+		return (ArrayList<String>)m_alClusterServers.clone();
 	}
 
 	/**

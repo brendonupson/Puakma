@@ -64,7 +64,7 @@ public class CLUSTERReconnectThread extends Thread implements ErrorDetect
 		while(m_bLooping)
 		{
 			//check list of hosts against actual connections
-			ArrayList al = m_Parent.getClusterServerList();
+			ArrayList<String> al = m_Parent.getClusterServerList();
 			//TODO connect port AND SSL!!!
 			int iCLUSTERPort=6969;
 			int iMaxReconnect=18000; //18 seconds

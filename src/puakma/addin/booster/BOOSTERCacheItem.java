@@ -25,7 +25,7 @@ public class BOOSTERCacheItem implements CacheableItem
 	private long m_lCacheHits=0;
 	//private Date m_dtExpires = new Date();
 	private boolean m_bGZippedContent = false;
-	private ArrayList m_arrHeaders = new ArrayList();
+	private ArrayList<String> m_arrHeaders = new ArrayList<String>();
 	private boolean m_bCacheable = true;
 	private String m_sLastModified = "";
 	private String m_sContentType = "text/plain";
@@ -38,7 +38,7 @@ public class BOOSTERCacheItem implements CacheableItem
 	private boolean m_bSharedCache=false;
 
 	/** Creates a new instance of BOOSTERCacheItem */
-	public BOOSTERCacheItem(String sHost, String sURI, byte buf[], ArrayList arrHeaders, boolean bCacheIsCompressed, int iMaxElementSize, long lMaxCacheTimeMS, long lMinCacheTimeMS, boolean bSharedCache) 
+	public BOOSTERCacheItem(String sHost, String sURI, byte buf[], ArrayList<String> arrHeaders, boolean bCacheIsCompressed, int iMaxElementSize, long lMaxCacheTimeMS, long lMinCacheTimeMS, boolean bSharedCache) 
 	{
 		m_bSharedCache = bSharedCache;
 		m_sHost = sHost;
@@ -123,13 +123,13 @@ public class BOOSTERCacheItem implements CacheableItem
 	/**
 	 * Copy a header value into the internal header list
 	 */
-	private void copyHeader(ArrayList arrHeaders, String sField)
+	private void copyHeader(ArrayList<String> arrHeaders, String sField)
 	{
 		String sData = Util.getMIMELine(arrHeaders, sField);
 		if(sData!=null) m_arrHeaders.add(sField + ": " + sData);
 	}
 
-	public ArrayList getResponseHeaders()
+	public ArrayList<String> getResponseHeaders()
 	{
 		return m_arrHeaders;
 	}
@@ -147,7 +147,7 @@ public class BOOSTERCacheItem implements CacheableItem
 	/**
 	 * determines if the item in the cache has changed since it was added.
 	 */
-	public boolean hasChanged(ArrayList arrHeaders)
+	public boolean hasChanged(ArrayList<String> arrHeaders)
 	{
 		String sMod = Util.getMIMELine(arrHeaders, "If-Modified-Since");
 		if(sMod==null) return true;

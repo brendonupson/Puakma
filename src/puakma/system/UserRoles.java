@@ -36,7 +36,7 @@ import java.util.*;
 public class UserRoles
 {
   private String m_sAppPath;
-  private Hashtable htRoles = new Hashtable();
+  private Hashtable<String, String> m_htRoles = new Hashtable<String, String>();
 
   public UserRoles(String szAppPath)
   {
@@ -50,7 +50,7 @@ public class UserRoles
    */
   public boolean hasRole(String szRoleName)
   {	  
-    if(szRoleName!=null && htRoles.containsKey(szRoleName.toLowerCase()) ) return true;
+    if(szRoleName!=null && m_htRoles.containsKey(szRoleName.toLowerCase()) ) return true;
     return false;
   }
 
@@ -61,9 +61,9 @@ public class UserRoles
   public void addRole(String szRoleName)
   {
     String szRoleLower = szRoleName.toLowerCase();
-    if( htRoles.containsKey(szRoleLower) ) return;
+    if( m_htRoles.containsKey(szRoleLower) ) return;
 
-    htRoles.put(szRoleLower, szRoleName);
+    m_htRoles.put(szRoleLower, szRoleName);
   }
 
   /**
@@ -72,16 +72,16 @@ public class UserRoles
   */
   public void removeRole(String szRoleName)
   {
-    htRoles.remove(szRoleName.toLowerCase());
+    m_htRoles.remove(szRoleName.toLowerCase());
   }
 
   /**
   * Gets all the roles in this object
   */
-  public Vector getRoles()
+  public Vector<String> getRoles()
   {
-    Vector vRoles = new Vector();
-    Enumeration en = htRoles.elements();
+    Vector<String> vRoles = new Vector<String>();
+    Enumeration<String> en = m_htRoles.elements();
     while(en.hasMoreElements())
     {
       String s = (String)en.nextElement();
@@ -97,7 +97,7 @@ public class UserRoles
   public StringBuilder getXML()
   {
     StringBuilder sb = new StringBuilder(512);
-    Enumeration en = htRoles.elements();
+    Enumeration<String> en = m_htRoles.elements();
     sb.append("<approle app=\"" + m_sAppPath +  "\">\r\n");
     while(en.hasMoreElements())
     {
@@ -116,7 +116,7 @@ public class UserRoles
   public String toString()
   {
     StringBuilder sb = new StringBuilder(150);
-    Enumeration en = htRoles.elements();
+    Enumeration<String> en = m_htRoles.elements();
     sb.append(m_sAppPath + "\r\n");
     while(en.hasMoreElements())
     {

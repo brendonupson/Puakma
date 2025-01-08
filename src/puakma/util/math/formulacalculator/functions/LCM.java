@@ -54,7 +54,7 @@ public class LCM extends BaseFunction
 	{
 		if(lNums==null || lNums.length==0) return 0;
 		boolean bCalculate = true;
-		ArrayList arrNums = new ArrayList(lNums.length);
+		ArrayList<Long> arrNums = new ArrayList<Long>(lNums.length);
 		long lDivisor = 2; //start from 2 and move upwards
 		while(bCalculate)
 		{
@@ -64,13 +64,13 @@ public class LCM extends BaseFunction
 				if(!isArrayEqual(lNums, lDivided)) //if the result is not equal to before
 				{
 					lNums = lDivided;
-					arrNums.add(new Long(lDivisor));
+					arrNums.add(Long.valueOf(lDivisor));// new Long(lDivisor));
 				}
 				else lDivisor++;
 			}
 			else bCalculate = false;
 		}
-		arrNums.add(new Long(lDivisor));
+		arrNums.add(Long.valueOf(lDivisor)); //new Long(lDivisor));
 		return multiplyAll(arrNums);
 	}
 	

@@ -68,7 +68,7 @@ public class BOOSTER extends pmaAddIn
 	
 	public static final String SESSIONID_LABEL="_booster_sid";
 	private pmaAddInStatusLine m_pStatus;
-	private Vector m_Listeners = new Vector();    
+	private Vector<BOOSTERServer> m_Listeners = new Vector<BOOSTERServer>();    
 	private boolean m_bUseRealHostName = false;
 	private boolean m_bDebug = false;  
 	private boolean m_bDebugHeaders = false;
@@ -83,26 +83,26 @@ public class BOOSTER extends pmaAddIn
 	private File m_fUnavailable=null;
 	private boolean m_bAllowReverseDNSLookups = true;
 
-	private Hashtable m_htHostConfig = new Hashtable();
-	private ArrayList m_arrNoCompress = new ArrayList(); //mimetypes that do not get compressed
-	private ArrayList m_arrCompress = new ArrayList(); //mimetypes that get compressed
-	private ArrayList m_arrStartWithCompress = new ArrayList(); //mimetypes that get compressed starting with xxxxx*
-	private ArrayList m_arrEndWithCompress = new ArrayList(); //mimetypes that get compressed ending with xxxxx*
-	private ArrayList m_arrWildCompress = new ArrayList(); //mimetypes that get compressed that contain this term
+	private Hashtable<String, BOOSTERHostConfig> m_htHostConfig = new Hashtable<String, BOOSTERHostConfig>();
+	private ArrayList<String> m_arrNoCompress = new ArrayList<String>(); //mimetypes that do not get compressed
+	private ArrayList<String> m_arrCompress = new ArrayList<String>(); //mimetypes that get compressed
+	private ArrayList<String> m_arrStartWithCompress = new ArrayList<String>(); //mimetypes that get compressed starting with xxxxx*
+	private ArrayList<String> m_arrEndWithCompress = new ArrayList<String>(); //mimetypes that get compressed ending with xxxxx*
+	private ArrayList<String> m_arrWildCompress = new ArrayList<String>(); //mimetypes that get compressed that contain this term
 	//URIs that do not get compressed
-	private ArrayList m_arrExactNoCompressURI = new ArrayList();
-	private ArrayList m_arrStartWithNoCompressURI = new ArrayList();
-	private ArrayList m_arrEndWithNoCompressURI = new ArrayList();
-	private ArrayList m_arrWildNoCompressURI = new ArrayList();
+	private ArrayList<String> m_arrExactNoCompressURI = new ArrayList<String>();
+	private ArrayList<String> m_arrStartWithNoCompressURI = new ArrayList<String>();
+	private ArrayList<String> m_arrEndWithNoCompressURI = new ArrayList<String>();
+	private ArrayList<String> m_arrWildNoCompressURI = new ArrayList<String>();
 
-	private ArrayList m_arrNoCache = new ArrayList();
-	private ArrayList m_arrCache = new ArrayList();
-	private ArrayList m_arrStartWithCache = new ArrayList(); //mimetypes that get cached starting with xxxxx*
-	private ArrayList m_arrEndWithCache = new ArrayList(); //mimetypes that get cached ending with xxxxx*
-	private ArrayList m_arrWildCache = new ArrayList(); //mimetypes that get cached that contain this term
+	private ArrayList<String> m_arrNoCache = new ArrayList<String>();
+	private ArrayList<String> m_arrCache = new ArrayList<String>();
+	private ArrayList<String> m_arrStartWithCache = new ArrayList<String>(); //mimetypes that get cached starting with xxxxx*
+	private ArrayList<String> m_arrEndWithCache = new ArrayList<String>(); //mimetypes that get cached ending with xxxxx*
+	private ArrayList<String> m_arrWildCache = new ArrayList<String>(); //mimetypes that get cached that contain this term
 
-	private ArrayList m_arrAlwaysCacheURIs = new ArrayList();
-	private ArrayList m_arrNoCacheURIs = new ArrayList();
+	private ArrayList<String> m_arrAlwaysCacheURIs = new ArrayList<String>();
+	private ArrayList<String> m_arrNoCacheURIs = new ArrayList<String>();
 
 	private FileOutputStream m_fout;
 	private Calendar m_calOutFile=Calendar.getInstance();
@@ -112,7 +112,7 @@ public class BOOSTER extends pmaAddIn
 	private Calendar m_calCompressionFile=Calendar.getInstance();
 	private NumberFormat m_nfDecimal = NumberFormat.getInstance();
 	private boolean m_bNoCompressionLog=true;
-	private ArrayList m_alMimeExcludes = new ArrayList();
+	private ArrayList<String> m_alMimeExcludes = new ArrayList<String>();
 	private boolean m_bHTTPLog=false;
 	private Cache m_cache = null;
 	private long m_lCacheSizeMB=0;
@@ -164,7 +164,7 @@ public class BOOSTER extends pmaAddIn
 		loadHostConfig();
 
 		String sTemp = m_pSystem.getSystemProperty("BOOSTERReplaceHosts");
-		ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+		ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 		if(arr!=null && arr.size()>0) m_sReplaceHosts = puakma.util.Util.objectArrayToStringArray(arr.toArray());
 
 		sTemp = m_pSystem.getSystemProperty("BOOSTERPollInterval");
@@ -412,7 +412,7 @@ public class BOOSTER extends pmaAddIn
 				String s = (String)en.nextElement();
 				if(s.toUpperCase().startsWith("HOSTS~"))
 				{
-					ArrayList arrHosts = puakma.util.Util.splitString((String)prop.get(s), ',');
+					ArrayList<String> arrHosts = puakma.util.Util.splitString((String)prop.get(s), ',');
 					BOOSTERHostConfig hc = new BOOSTERHostConfig();
 					String sKey = s;
 					sKey = sKey.substring(6, sKey.length());
@@ -438,7 +438,7 @@ public class BOOSTER extends pmaAddIn
 
 					hc.m_sDomain = sKey;
 					hc.m_sServers = puakma.util.Util.objectArrayToStringArray(arrHosts.toArray());
-					hc.m_vAvailableServers = new Vector();
+					hc.m_vAvailableServers = new Vector<String>();
 					this.m_htHostConfig.put(sKey, hc);
 					//System.out.println(s + "=>>" +  sKey);
 				}
@@ -565,7 +565,7 @@ public class BOOSTER extends pmaAddIn
 	}    
 
 
-	public void setAvailableHostVector(String sDomain, Vector vNewAvailableHosts)
+	public void setAvailableHostVector(String sDomain, Vector<String> vNewAvailableHosts)
 	{
 		BOOSTERHostConfig hc = (BOOSTERHostConfig)m_htHostConfig.get(sDomain.toLowerCase());
 		if(hc==null) hc = (BOOSTERHostConfig)m_htHostConfig.get("*");
@@ -840,7 +840,7 @@ public class BOOSTER extends pmaAddIn
 			sb.append("Shared Cache             : " + m_bSharedCache +"\r\n");
 			sb.append("\r\n");
 
-			Enumeration en = m_Listeners.elements();
+			Enumeration<BOOSTERServer> en = m_Listeners.elements();
 			while(en.hasMoreElements())
 			{
 				BOOSTERServer hs = (BOOSTERServer)en.nextElement();
@@ -1133,7 +1133,7 @@ public class BOOSTER extends pmaAddIn
 		String sTemp = m_pSystem.getSystemProperty("BOOSTERCacheContentTypes");
 		if(sTemp!=null && sTemp.length()>0)
 		{
-			ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+			ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 			for(int i=0; i<arr.size(); i++)
 			{
 				String s = (String)arr.get(i);
@@ -1164,7 +1164,7 @@ public class BOOSTER extends pmaAddIn
 		sTemp = m_pSystem.getSystemProperty("BOOSTERAlwaysCacheURI");
 		if(sTemp!=null && sTemp.length()>0)
 		{
-			ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+			ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 			for(int i=0; i<arr.size(); i++)
 			{
 				//exact matches only...
@@ -1175,7 +1175,7 @@ public class BOOSTER extends pmaAddIn
 		sTemp = m_pSystem.getSystemProperty("BOOSTERNoCacheURI");
 		if(sTemp!=null && sTemp.length()>0)
 		{
-			ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+			ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 			for(int i=0; i<arr.size(); i++)
 			{
 				//exact matches only...
@@ -1197,7 +1197,7 @@ public class BOOSTER extends pmaAddIn
 		String sTemp = m_pSystem.getSystemProperty("BOOSTERCompressTypes");
 		if(sTemp!=null && sTemp.length()>0)
 		{
-			ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+			ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 			for(int i=0; i<arr.size(); i++)
 			{
 				String s = (String)arr.get(i);
@@ -1227,7 +1227,7 @@ public class BOOSTER extends pmaAddIn
 		sTemp = m_pSystem.getSystemProperty("BOOSTERNoCompressURI");
 		if(sTemp!=null && sTemp.length()>0) 
 		{
-			ArrayList arr = puakma.util.Util.splitString(sTemp, ',');
+			ArrayList<String> arr = puakma.util.Util.splitString(sTemp, ',');
 			for(int i=0; i<arr.size(); i++)
 			{
 				String s = (String)arr.get(i);
@@ -1375,7 +1375,7 @@ public class BOOSTER extends pmaAddIn
 	/**
 	 * return the list of mimetypes to exclude form logging
 	 */
-	public ArrayList getMimeExcludes()
+	public ArrayList<String> getMimeExcludes()
 	{
 		return m_alMimeExcludes;
 	}

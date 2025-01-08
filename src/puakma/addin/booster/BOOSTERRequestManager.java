@@ -450,25 +450,7 @@ public class BOOSTERRequestManager implements pmaThreadInterface, ErrorDetect
 		return m_booster_server.shouldUseStickySessions();
 	}
 
-	/**
-	 *
-	 */
-	private Socket zz_makeSocket(String sHost, int iPort, boolean bIsSSL) throws Exception
-	{
-		if(!bIsSSL) return new Socket(sHost, iPort);
-
-		SSLContext ctx = SSLContext.getInstance("SSL");
-		TrustManager tmArray[] = new TrustManager[1];
-		tmArray[0] = new puakma.util.RelaxedTrustManager();          
-		ctx.init(null, tmArray, null);
-
-		SocketFactory sf = ctx.getSocketFactory();
-		Socket s = sf.createSocket(sHost, iPort);
-
-
-		try{ s.setTcpNoDelay(true); }catch(Exception t){}
-		return s;
-	}
+	
 
 	private Socket makeSocket(String sHost, int iPort, boolean bIsSSL) throws Exception
 	{
@@ -616,7 +598,7 @@ public class BOOSTERRequestManager implements pmaThreadInterface, ErrorDetect
 	/**
 	 * list of mimetypes to exclude form logging
 	 */
-	public ArrayList getMimeExcludes()
+	public ArrayList<String> getMimeExcludes()
 	{
 		return m_booster_server.getMimeExcludes();
 	}

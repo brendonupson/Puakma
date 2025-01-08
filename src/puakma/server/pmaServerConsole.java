@@ -277,13 +277,13 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 	private String doStore(String sCommand, boolean bPrintToScreen)
 	{
 		String szReturn="";
-		Hashtable cacheObject =  m_pSystem.getAllGlobalObjects();
+		Hashtable<String, Object> cacheObject =  m_pSystem.getAllGlobalObjects();
 		if(cacheObject==null) szReturn = "-> GlobalStore is null" + CRLF;
 
 		if(cacheObject!=null && sCommand.toLowerCase().equals("status"))
 		{
 			szReturn = "-> GlobalStore " + m_nf0DP.format(cacheObject.size()) + " objects:"+ CRLF;
-			Enumeration en = cacheObject.keys();
+			Enumeration<String> en = cacheObject.keys();
 			while(en.hasMoreElements())
 			{
 				String sKey = (String)en.nextElement();
@@ -328,7 +328,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 			String sName = szCommand.substring(iPos+1);
 			if(sName.equals("*"))
 			{
-				Enumeration en = m_pSystem.getSessionList();
+				Enumeration<pmaSession> en = m_pSystem.getSessionList();
 				while(en.hasMoreElements())
 				{
 					SessionContext sess = new SessionContext((pmaSession)en.nextElement());
@@ -339,7 +339,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 			}
 			else //specific user
 			{
-				ArrayList arr = m_pSystem.getSessionsByUserName(sName);
+				ArrayList<SessionContext> arr = m_pSystem.getSessionsByUserName(sName);
 				for(int i=0; i<arr.size(); i++)
 				{
 					SessionContext sess = (SessionContext)arr.get(i);
@@ -358,7 +358,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 		{
 			int iPos = szCommand.indexOf(' ');
 			String sName = szCommand.substring(iPos+1);
-			ArrayList arr = m_pSystem.getSessionsByUserName(sName);
+			ArrayList<SessionContext> arr = m_pSystem.getSessionsByUserName(sName);
 			for(int i=0; i<arr.size(); i++)
 			{
 				SessionContext sess = (SessionContext)arr.get(i);
@@ -701,7 +701,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 		StringBuilder sbSession = new StringBuilder(512);
 		ArrayList<String> arr = new ArrayList<String>();
 
-		Enumeration en = m_pSystem.getSessionList();
+		Enumeration<pmaSession> en = m_pSystem.getSessionList();
 		boolean bFound=false;
 		int iPos;
 		String szAgent="";

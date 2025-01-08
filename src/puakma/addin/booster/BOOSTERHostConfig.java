@@ -21,7 +21,7 @@ import java.util.*;
 public class BOOSTERHostConfig 
 {
     public String m_sDomain; //www.somehost.com
-    public Vector m_vAvailableServers = new Vector();
+    public Vector<String> m_vAvailableServers = new Vector<String>();
     public String m_sServers[]=null;
     public String m_sPollPath; 
     public String m_sBackupDomain;

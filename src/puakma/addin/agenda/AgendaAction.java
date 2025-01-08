@@ -216,7 +216,7 @@ public class AgendaAction extends Thread implements ErrorDetect
 		//4/3/2010 BU
 		//remove spurious commas eg "Schedule=D,Interval=1,Days=SMTWHFA,StartTime=23:30,,,,,,,,,,,,,,LastRun=1267623003231"
 		StringBuilder sbOptions = new StringBuilder(m_sOptions.length());
-		ArrayList arr = Util.splitString(m_sOptions, ',');
+		ArrayList<String> arr = Util.splitString(m_sOptions, ',');
 		for(int i=0; i<arr.size(); i++)
 		{
 			String sValue = Util.trimSpaces((String)arr.get(i));

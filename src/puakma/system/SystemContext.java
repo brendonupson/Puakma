@@ -53,7 +53,7 @@ public class SystemContext implements ErrorDetect,Cloneable
 
 	private int m_iSystemConnGetCount=0;
 	private int m_iSystemConnReleaseCount=0;
-	private Hashtable m_htConnections = new Hashtable();
+	private Hashtable<Connection, Connection> m_htConnections = new Hashtable<Connection, Connection>();
 
 
 	public final static String DBALIAS_SYSTEM = "~DB_SYSTEM~";
@@ -135,7 +135,7 @@ public class SystemContext implements ErrorDetect,Cloneable
 				iOpenConnections>0)//m_htConnections.size()>0)
 		{						
 			//force them all to be cleared....
-			Enumeration en = m_htConnections.keys();
+			Enumeration<Connection> en = m_htConnections.keys();
 			while(en.hasMoreElements())
 			{
 				Connection cx = (Connection)en.nextElement();
@@ -157,8 +157,8 @@ public class SystemContext implements ErrorDetect,Cloneable
 
 		sb.append(m_pSystem.getDBPoolStatus());
 		TornadoServerInstance tsi = TornadoServer.getInstance();
-		Hashtable htApp = tsi.getAllLoadedApplications();
-		Iterator it = htApp.values().iterator();
+		Hashtable<String, TornadoApplication> htApp = tsi.getAllLoadedApplications();
+		Iterator<TornadoApplication> it = htApp.values().iterator();
 		while(it.hasNext())
 		{
 			TornadoApplication ta = (TornadoApplication) it.next();
@@ -239,12 +239,12 @@ public class SystemContext implements ErrorDetect,Cloneable
 	/**
 	 * @return a vector of all SessionContext objects
 	 */
-	public Vector getAllSessions()
+	public Vector<SessionContext> getAllSessions()
 	{
-		Vector v = new Vector();
+		Vector<SessionContext> v = new Vector<SessionContext>();
 		try
 		{
-			Enumeration eSess = m_pSystem.getSessionList();
+			Enumeration<pmaSession> eSess = m_pSystem.getSessionList();
 			while(eSess.hasMoreElements())
 			{
 				pmaSession sess = (pmaSession)eSess.nextElement();
@@ -412,8 +412,8 @@ public class SystemContext implements ErrorDetect,Cloneable
 	{   
 		//cycle through the loaded apps and see if any of them have this connection
 		TornadoServerInstance tsi = TornadoServer.getInstance();
-		Hashtable htApp = tsi.getAllLoadedApplications();
-		Iterator it = htApp.values().iterator();
+		Hashtable<String, TornadoApplication> htApp = tsi.getAllLoadedApplications();
+		Iterator<TornadoApplication> it = htApp.values().iterator();
 		while(it.hasNext())
 		{
 			TornadoApplication ta = (TornadoApplication) it.next();

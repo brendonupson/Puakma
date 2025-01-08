@@ -725,7 +725,7 @@ public class BOOSTERServer extends Thread implements ErrorDetect
 	/**
 	 * list of mimetypes to exclude form logging
 	 */
-	public ArrayList getMimeExcludes()
+	public ArrayList<String> getMimeExcludes()
 	{
 		return m_Parent.getMimeExcludes();
 	}

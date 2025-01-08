@@ -48,8 +48,8 @@ public class pmaServer implements ErrorDetect,Runnable
 	private boolean m_bServerRunning=false;
 
 	//private HTTPServer pHTTPServer;
-	private Vector vAddIns = new Vector();
-	private Hashtable m_htAddInAliases = new Hashtable();
+	private Vector<pmaAddIn> vAddIns = new Vector<pmaAddIn>();
+	private Hashtable<String, String> m_htAddInAliases = new Hashtable<String, String>(50);
 
 
 	/** Ignore, just a stub for the ClassLoader
