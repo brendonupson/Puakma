@@ -185,7 +185,7 @@ public class PropertyEncoder
 		if(fProps==null) return;
 		if(!fProps.isFile()) return;
 
-		ArrayList arr = loadProperties(new FileInputStream(fProps));
+		ArrayList<String> arr = loadProperties(new FileInputStream(fProps));
 		//boolean bChanged = false;
 
 		for(int i=0; i<arr.size(); i++)
@@ -261,12 +261,12 @@ public class PropertyEncoder
 	/**
 	 * load a properties file into an array
 	 */
-	private ArrayList loadProperties(InputStream is) throws IOException
+	private ArrayList<String> loadProperties(InputStream is) throws IOException
 	{
 		String SYSTEM_KEY = "SystemKey=";
 		boolean bFoundKey=false;
 
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		BufferedReader br = new BufferedReader(new InputStreamReader(is));
 		String sLine="";
 		while( (sLine=br.readLine()) != null)

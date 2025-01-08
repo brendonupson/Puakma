@@ -408,9 +408,9 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 		return szReturn;
 	}
 
-	private static ArrayList visitThreadGroup(ThreadGroup group, int level) 
+	private static ArrayList<String> visitThreadGroup(ThreadGroup group, int level) 
 	{
-		ArrayList arrThreadData = new ArrayList();
+		ArrayList<String> arrThreadData = new ArrayList<String>();
 
 		arrThreadData.add("---- THREADGROUP: " + group.getName() + " (" + group.activeCount() +") ----");
 		// Get threads in `group'
@@ -454,7 +454,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 	 */
 	private String doShow(String sCommand, boolean bPrintToScreen)
 	{
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		boolean bHandled = false;
 		boolean bSort = true;
 
@@ -699,7 +699,7 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 	{
 		StringBuilder sbReturn = new StringBuilder(512);
 		StringBuilder sbSession = new StringBuilder(512);
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 
 		Enumeration en = m_pSystem.getSessionList();
 		boolean bFound=false;
@@ -767,12 +767,11 @@ public class pmaServerConsole extends Thread implements ErrorDetect
 	private String doSessionState(String szCommand, boolean bPrintToScreen)
 	{
 		StringBuilder sbReturn = new StringBuilder(512);
-		//ArrayList arr = new ArrayList();
 		String sUserName=szCommand;
 
 		X500Name nmSearch = new X500Name(sUserName.toLowerCase());
 
-		Enumeration en = m_pSystem.getSessionList();
+		Enumeration<pmaSession> en = m_pSystem.getSessionList();
 		//boolean bFound=false;    
 
 		sbReturn.append("----------------- SESSION DETAILS ---------------------");

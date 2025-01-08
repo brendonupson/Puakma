@@ -43,10 +43,10 @@ public class pmaAddIn extends Thread implements ErrorDetect
 	private boolean m_bShouldQuit=false;
 	private boolean m_bIsRunning=false;
 	private Date m_dtSecondReference=new Date();
-	private Vector m_vStatusLines = new Vector();
+	private Vector<pmaAddInStatusLine> m_vStatusLines = new Vector<pmaAddInStatusLine>();
 	private String m_AddInName="$PuakmaAddIn";
 	private pmaServer m_pServer;
-	private Hashtable m_htStatistics = new Hashtable();
+	private Hashtable<String, AddInStatistic> m_htStatistics = new Hashtable<String, AddInStatistic>();
 
 	protected SystemContext m_pSystem;
 
@@ -453,7 +453,7 @@ public class pmaAddIn extends Thread implements ErrorDetect
 
 	public AddInStatistic[] getStatistics(String sStatisticKey)
 	{
-		ArrayList arr = new ArrayList();
+		
 		if(sStatisticKey!=null)
 		{
 			sStatisticKey = sStatisticKey.toLowerCase();
@@ -465,7 +465,9 @@ public class pmaAddIn extends Thread implements ErrorDetect
 			return null; //no stat by that name
 		}
 
+		
 		//all
+		ArrayList<AddInStatistic> arr = new ArrayList<AddInStatistic>();
 		Enumeration en = m_htStatistics.keys();
 		while(en.hasMoreElements())
 		{
@@ -488,7 +490,7 @@ public class pmaAddIn extends Thread implements ErrorDetect
 	 */
 	public String[] getStatisticKeys()
 	{
-		ArrayList arr = new ArrayList();
+		ArrayList<String> arr = new ArrayList<String>();
 		Enumeration en = m_htStatistics.keys();
 		while(en.hasMoreElements())
 		{

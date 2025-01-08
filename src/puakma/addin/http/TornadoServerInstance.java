@@ -16,7 +16,7 @@ import puakma.util.Util;
 public class TornadoServerInstance 
 {
 	private SystemContext m_pSystem;
-	Hashtable m_htApplications = new Hashtable();
+	private Hashtable<String, TornadoApplication> m_htApplications = new Hashtable<String, TornadoApplication>();
 	private Cache m_cacheDesign; //global, shared by all applications, 1 big bucket
 
 	/**
@@ -160,7 +160,7 @@ public class TornadoServerInstance
 	 * 
 	 * @return
 	 */
-	public Hashtable getAllLoadedApplications()
+	public Hashtable<String, TornadoApplication> getAllLoadedApplications()
 	{
 		return m_htApplications;
 	}
@@ -168,7 +168,7 @@ public class TornadoServerInstance
 	public String toString()
 	{
 		StringBuilder sb = new StringBuilder();
-		Enumeration en = m_htApplications.keys();
+		Enumeration<String> en = m_htApplications.keys();
 		while(en.hasMoreElements())
 		{
 			String sKey = (String)en.nextElement();
@@ -312,7 +312,7 @@ public class TornadoServerInstance
 		if(sAppPath==null)
 		{
 			boolean bCleared = false;
-			Enumeration en = m_htApplications.keys();
+			Enumeration<String> en = m_htApplications.keys();
 			while(en.hasMoreElements())
 			{
 				String sKey = (String)en.nextElement();

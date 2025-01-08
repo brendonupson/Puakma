@@ -42,7 +42,7 @@ public class pmaLog
 	private String m_sLogFileName=null;
 	private long m_ErrCount=0;
 	//private String sLogReceivingAddIns[]=null;
-	private Hashtable m_htReceivingAddIns = new Hashtable();
+	private Hashtable<String, String> m_htReceivingAddIns = new Hashtable<String, String>();
 	private boolean m_bLogToDB=true;
 	private Calendar m_calOutFile=Calendar.getInstance();
 	private SimpleDateFormat m_simpledfLogfile = new SimpleDateFormat("yyyyMMdd");
@@ -667,7 +667,7 @@ public class pmaLog
 	{
 		if(m_htReceivingAddIns.size()==0) return;
 
-		Enumeration en = m_htReceivingAddIns.keys();
+		Enumeration<String> en = m_htReceivingAddIns.keys();
 		while(en.hasMoreElements())
 		{
 			String sAddInClass = (String)en.nextElement();

@@ -276,7 +276,7 @@ public class JSONView
 		Connection cx = null;
 		m_lCurrentViewRowCount = 0;
 		long lLoopCount=0;
-		ArrayList arr = new ArrayList();
+		ArrayList<JSONObject> arr = new ArrayList<JSONObject>();
 		boolean bSystemConnection = m_sConnName!=null && m_sConnName.equals(SystemContext.DBALIAS_SYSTEM); 
 
 		Statement stmt = null;

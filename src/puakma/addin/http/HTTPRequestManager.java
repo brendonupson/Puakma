@@ -2648,16 +2648,6 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		sendHTTPResponse(400, "Bad Request", null, HTTP_VERSION, null, null);
 	}
 
-	/**
-	 *
-	 */
-	/*private void sendOptions(String sInboundPath) //eg "/" or "*" maybe we'll do something with this later??
-	{
-		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "sendOptions()", this);
-		ArrayList extra_headers = new ArrayList();
-		extra_headers.add("Allow: GET, POST, HEAD, OPTIONS");
-		sendHTTPResponse(200, "OK", extra_headers, HTTP_VERSION, null, null);
-	}*/
 
 	/**
 	 *

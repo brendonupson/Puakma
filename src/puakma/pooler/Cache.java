@@ -33,7 +33,7 @@ import java.util.*;
  */
 public class Cache implements CacheableItem
 {
-	private Hashtable m_htItems = new Hashtable();
+	private Hashtable<String, CacheableItem> m_htItems = new Hashtable<String, CacheableItem>();
 	//private double m_dSize=0; cache elements may grow in size!!
 	private double m_dMaxSize=-1;
 	private double m_dCacheHits=0;
@@ -96,7 +96,7 @@ public class Cache implements CacheableItem
 
 		//System.out.println("*** DEBUG: ADD TO CACHE: " + ciItem.getItemKey());
 		//m_dSize += ciItem.getSize();
-		m_htItems.put(ciItem.getItemKey(), oItem);
+		m_htItems.put(ciItem.getItemKey(), ciItem);
 
 		return true;
 	}
@@ -135,7 +135,7 @@ public class Cache implements CacheableItem
 	public void expireAll(long lTimeInMilliseconds)
 	{
 		CacheableItem ciItem;
-		Enumeration en = m_htItems.elements();
+		Enumeration<CacheableItem> en = m_htItems.elements();
 //		System.out.println("*** DEBUG: EXPIRING ITEMS OLDER THAN: " + lTimeInMilliseconds);
 		while(en.hasMoreElements())
 		{
@@ -197,7 +197,7 @@ public class Cache implements CacheableItem
 		ArrayList<String> arr = new ArrayList<String>();
 		int iCount=0;
 		StringBuilder sb = new StringBuilder(256);
-		Enumeration en = m_htItems.elements();
+		Enumeration<CacheableItem> en = m_htItems.elements();
 		while(en.hasMoreElements())
 		{
 			CacheableItem ciItem = (CacheableItem)en.nextElement();
@@ -240,7 +240,7 @@ public class Cache implements CacheableItem
 	public double getCacheSize()
 	{
 		double dSize=0;
-		Enumeration en = m_htItems.elements();
+		Enumeration<CacheableItem> en = m_htItems.elements();
 		while(en.hasMoreElements())
 		{
 			CacheableItem ciItem = (CacheableItem)en.nextElement();

@@ -67,7 +67,7 @@ public class HTTPSessionContext implements ErrorDetect
 	private HTTPRequestManager m_HTTPRM;
 	//private int m_iDataConnGetCount;
 	//private int m_iDataConnReleaseCount;
-	private Hashtable m_htConnections = new Hashtable();
+	private Hashtable<Connection, Connection> m_htConnections = new Hashtable<Connection, Connection>();
 
 	/* Create a new instance of HTTPSessionContext used by the HTTP stack
 	 * @param httprm
@@ -810,9 +810,9 @@ public class HTTPSessionContext implements ErrorDetect
 	 * @param bSortByValue Pass true to have the results put in the vector in sorted Data order.
 	 * @return null if no match
 	 */
-	public Vector getAllKeywordValues(String sKey, boolean bSortByValue)
+	public Vector<String> getAllKeywordValues(String sKey, boolean bSortByValue)
 	{
-		Vector vReturn=null;
+		Vector<String> vReturn=null;
 		Connection cxSys=null; 
 		PreparedStatement stmt = null;
 		ResultSet rs = null;
@@ -850,11 +850,9 @@ public class HTTPSessionContext implements ErrorDetect
 			rs = stmt.executeQuery();
 			while(rs.next())
 			{
-				if(vReturn==null) vReturn = new Vector();
+				if(vReturn==null) vReturn = new Vector<String>();
 				vReturn.add(rs.getString("Data"));
-			}
-			rs.close();
-			stmt.close();
+			}			
 		}
 		catch(Exception de)
 		{
@@ -1241,7 +1239,7 @@ public class HTTPSessionContext implements ErrorDetect
 		{
 			int iOpenConnections = m_htConnections.size();
 			//force them all to be cleared....
-			Enumeration en = m_htConnections.keys();
+			Enumeration<Connection> en = m_htConnections.keys();
 			while(en.hasMoreElements())
 			{
 				Connection cx = (Connection)en.nextElement();

@@ -35,7 +35,7 @@ import puakma.system.pmaSystem;
 public class dbConnectionPoolManager implements ErrorDetect
 {
 	//private boolean m_bStopped;
-	private Hashtable m_map = new Hashtable();
+	private Hashtable<String, dbConnectionPooler> m_map = new Hashtable<String, dbConnectionPooler>();
 	private SystemContext m_sysCtx;
 	private dbConnectionCleaner m_Cleaner;
 	private boolean m_bRunning = true;
@@ -95,7 +95,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 			//System.out.println("SHUTDOWN: "+this.getName());			
 		}
 
-		
+
 		/**
 		 * 
 		 */
@@ -116,7 +116,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 	// **************************************************
 	// **************************************************
 	// **************************************************
-	
+
 
 
 	/**
@@ -138,7 +138,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 	public boolean createPooler(  String sAlias, int iMaxCount, int iLockWaitMS, int iInitialCount,
 			int iExpirySeconds, String sdbDriver, String sdbName,
 			String sdbUser, String sdbPassword ) throws Exception
-			{
+	{
 		if (!m_map.containsKey( sAlias.trim().toLowerCase()) )
 		{
 			m_map.put( sAlias.trim().toLowerCase(), new dbConnectionPooler(
@@ -147,7 +147,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 			return( true );
 		}
 		return( false );
-			}
+	}
 
 	/**
 	 * 
@@ -224,7 +224,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 	{
 		if(cnx==null) return false;
 
-		Enumeration en = m_map.elements();
+		Enumeration<dbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
 			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
@@ -255,8 +255,8 @@ public class dbConnectionPoolManager implements ErrorDetect
 		m_bRunning = false;
 		m_Cleaner.destroy();
 
-		Collection coll = m_map.values();
-		Iterator it = coll.iterator();
+		Collection<dbConnectionPooler> coll = m_map.values();
+		Iterator<dbConnectionPooler> it = coll.iterator();
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Shutting down connection pool manager.", this );
 		//m_bStopped = true;
 		while ( it.hasNext() )
@@ -281,7 +281,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Restarting connection pool manager.", this);
 		//m_bStopped = false;
 
-		Enumeration en = m_map.elements();
+		Enumeration<dbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
 			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
@@ -292,13 +292,13 @@ public class dbConnectionPoolManager implements ErrorDetect
 			}
 		}
 	}
-	
+
 	public synchronized void reset()
 	{
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Resetting connection pool manager.", this);
 		//m_bStopped = false;
 
-		Enumeration en = m_map.elements();
+		Enumeration<dbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
 			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
@@ -308,7 +308,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 				m_sysCtx.doError("Trapped exception shutting down pool.", this);
 			}
 		}
-		
+
 		m_map.clear(); //remove all pools		
 	}
 
@@ -318,14 +318,14 @@ public class dbConnectionPoolManager implements ErrorDetect
 	 */
 	public synchronized void doExpire()
 	{
-		Enumeration en = m_map.elements();
+		Enumeration<dbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
 			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
 			if ( pool != null ) pool.doExpire();			
 		}
 	}
-	
+
 
 	/**
 	 *
@@ -344,7 +344,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 	{
 		StringBuilder sb = new StringBuilder(256);
 		sb.append("------ DB POOL STATUS ------ (" + m_map.size() + ") \r\n");
-		Enumeration en = m_map.elements();
+		Enumeration<dbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
 			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();

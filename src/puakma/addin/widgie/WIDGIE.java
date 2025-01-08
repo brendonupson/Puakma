@@ -57,7 +57,7 @@ import puakma.util.Util;
 public class WIDGIE extends pmaAddIn
 {
 	private pmaAddInStatusLine m_pStatus;
-	private Hashtable m_htWidgets = new Hashtable();
+	private Hashtable<String, WidgetItem> m_htWidgets = new Hashtable<String, WidgetItem>();
 	private Hashtable m_htSessions = new Hashtable();
 	private final static double WIDGIE_VERSION = 1.47;
 	private boolean m_bAutoReload=false;
@@ -313,8 +313,8 @@ public class WIDGIE extends pmaAddIn
 				sReturn += "OFF";
 
 			sReturn += "\r\n\r\n";
-			Enumeration en = m_htWidgets.elements();
-			ArrayList arr = new ArrayList();
+			Enumeration<WidgetItem> en = m_htWidgets.elements();
+			ArrayList<String> arr = new ArrayList<String>();
 			while(en.hasMoreElements())
 			{
 				WidgetItem wItem = (WidgetItem)en.nextElement();
@@ -445,8 +445,7 @@ public class WIDGIE extends pmaAddIn
 		if(sAction.length()==0) sMethod = sMethod.toUpperCase();
 
 		String sThreadID = Thread.currentThread().getName();
-		//System.out.println("threadid="+sThreadID + " sessid="+sessCtx.getSessionID());
-		//m_htSessions.put(sThreadID, sessionCtx);
+		//System.out.println("threadid="+sThreadID + " sessid="+sessCtx.getSessionID());		
 		addSession(sThreadID, pSession);
 		if(sAction.equals(DesignElement.PARAMETER_WIDGETLIST)) outMessage = getWidgetList(pSession, rPath, sBasePath);
 		if(sAction.equals(DesignElement.PARAMETER_WIDGETWSDL) || (sAction.length()==0 && sMethod.equals("GET"))) outMessage = getWidgetWSDL(pSession, rPath, sBasePath);

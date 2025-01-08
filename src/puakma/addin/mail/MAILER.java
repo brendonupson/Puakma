@@ -62,11 +62,11 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 	private boolean bSmartHostPortSecure = false;
 	private String szSmartHost;
 	private String m_HostName;
-	private Hashtable htMessageQueue = new Hashtable();
+	private Hashtable<String, String> htMessageQueue = new Hashtable<String, String>();
 	private pmaAddInStatusLine pStatus;
 	private boolean m_bRunning = true;
-	private long m_lTotalMailsSent = 0;
-	private long m_lTotalMailErrors = 0;
+	//private long m_lTotalMailsSent = 0;
+	//private long m_lTotalMailErrors = 0;
 
 	public static final String STATISTIC_KEY_MAILSPERHOUR = "mailer.mailsperhour";
 	public static final String STATISTIC_KEY_MAILSTOTAL = "mailer.mailstotal";
@@ -447,7 +447,7 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		if(sCommand.toLowerCase().startsWith("test "))
 		{
 			//System.out.println("[" + sCommand + "]");
-			ArrayList cmd = Util.splitString(sCommand, ' ');
+			ArrayList<String> cmd = Util.splitString(sCommand, ' ');
 			if(cmd.size()!=3) return "Invalid parameters. Specify from and to address";
 			
 			String sFromAddress = "";

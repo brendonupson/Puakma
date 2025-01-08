@@ -23,9 +23,8 @@ package puakma.util.parsers.html;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Hashtable;
-import java.util.Vector;
 import java.util.Enumeration;
+import java.util.Hashtable;
 
 /**
  * This represents a single HTML tag. Each TagToken has a name and a
@@ -40,11 +39,9 @@ public class HTMLTag {
 
 	private boolean end = false;
 
-	private Hashtable attr = null;
+	private Hashtable<String, String> attr = new Hashtable<String, String>();
 
 	public HTMLTag (String line) {
-
-		attr = new Hashtable();
 		tokenizeAttributes(line);
 	}
 
@@ -52,7 +49,7 @@ public class HTMLTag {
 		return name;
 	}
 
-	public Hashtable getAttributes () {
+	public Hashtable<String, String> getAttributes () {
 		return attr;
 	}
 
@@ -86,7 +83,7 @@ public class HTMLTag {
 		// Check if there are any attributes.
 		if (attr != null) {
 
-			Enumeration enu = attr.elements();
+			Enumeration<String> enu = attr.elements();
 			if (enu.hasMoreElements()) {
 				sb.append(' ');
 
@@ -195,7 +192,7 @@ public class HTMLTag {
 		int i;			// Loop variable.
 
 		// Get the vector of tokens.
-		ArrayList v = tokenizeString(args);
+		ArrayList<String> v = tokenizeString(args);
 
 		// Check it is not null.
 		if (v == null) return;
@@ -205,7 +202,7 @@ public class HTMLTag {
 		if (length > 0) tokens = new String[length];
 
 		// Get an enumeration of the vector's elements.
-		Enumeration e = Collections.enumeration(v);//v.elements();
+		Enumeration<String> e = Collections.enumeration(v);//v.elements();
 
 		// Store the first element as the TagToken's name.
 		setName((String) e.nextElement());
@@ -242,7 +239,7 @@ public class HTMLTag {
 	 * escapes.
 	 * @param s the string to tokenize.
 	 */
-	private ArrayList tokenizeString (String s) {
+	private ArrayList<String> tokenizeString (String s) {
 
 		// First check that the args are not null or zero-length.
 		if (s == null || s.length() == 0) return null;
@@ -254,7 +251,7 @@ public class HTMLTag {
 		int i = 0;		    // Loop variable.
 
 		// Create a vector to store the complete tokens.
-		ArrayList tokens = new ArrayList();
+		ArrayList<String> tokens = new ArrayList<String>();
 
 		// Create a buffer to store an individual token.
 		StringBuilder buffer = new StringBuilder(80);
