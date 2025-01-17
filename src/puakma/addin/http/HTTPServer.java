@@ -220,6 +220,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 
 		try{ m_iHTTPMaxExpirySeconds = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxExpirySeconds")); }
 		catch(Exception r){}
+		if(m_iHTTPMaxExpirySeconds<1) m_iHTTPMaxExpirySeconds = 3600;
 
 		try{ m_iHTTPSlowActionMS = Integer.parseInt(m_pSystem.getSystemProperty("HTTPSlowActionMS")); }
 		catch(Exception r){}

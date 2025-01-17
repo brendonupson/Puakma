@@ -1297,6 +1297,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					extra_headers.add(sExpires);
 				}
 			}
+			addCacheControlHeader(null, extra_headers);
 		}//last modified and expires block
 
 
@@ -1815,7 +1816,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
 			String sExpires = "Expires: " + puakma.util.Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 			extra_headers.add(sExpires);
-
+			addCacheControlHeader(null, extra_headers);
 
 			String sReply = "";
 			if(iErrCode==RET_OK) sReply="OK";
@@ -2363,18 +2364,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 
 			if(!m_sInboundMethod.equalsIgnoreCase("HEAD") && http_code!=RET_NOT_MODIFIED)
-			{
-				//System.out.println("here2");
-				//int len=MAX_CHUNK;
-				//long lContentLength = ((lLastByteInRange-lFirstByteInRange)+1);
-				long lTotalOut=0;
-				//if(lContentLength<MAX_CHUNK) len = lContentLength;
-				byte bufOutput[] = new byte[MAX_CHUNK];
-				//	if(m_sInboundPath!=null && m_sInboundPath.indexOf(".mp4")>0) m_pSystem.doDebug(0, http_code + " " + http_code_string + " ["+sRange+"] firstbyte="+lFirstByteInRange+" lastbyte="+lLastByteInRange + " contentlen=" + iContentLength +" stream len="+lStreamLengthBytes + " " + m_sInboundPath, this);
-
+			{				
+				long lTotalOut=0;				
+				byte bufOutput[] = new byte[MAX_CHUNK];				
 				is.skip(lFirstByteInRange);
 
-				//while((len=is.available()) > 0)
 				while(is.available() > 0)
 				{
 					int iRead = is.read(bufOutput);
@@ -2863,19 +2857,47 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(bIsResource)
 			{
 				Date dtLastModified = design.getLastModified();
-
+/*
 				Date dtExpires = new Date();
 				long lDiff = (System.currentTimeMillis() - dtLastModified.getTime()) / 2;
 				if(lDiff<0) lDiff = 0;
 				if(lDiff>0) dtExpires = Util.adjustDate(dtExpires, 0, 0, 0, 0, 0, (int) (lDiff/1000) );
+				*/
 				String sLastGMTMod = Util.formatDate(dtLastModified, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 				document.setExtraHeaderValue("Last-Modified", sLastGMTMod, true);
+				
+				int iSeconds = (int)Math.abs((System.currentTimeMillis() - dtLastModified.getTime())/1000);
+				iSeconds = iSeconds/2; //set expiry to half the time since it was last modified
+				int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
+				if(iMaxEpirySeconds>=0 && iSeconds>iMaxEpirySeconds) iSeconds = iMaxEpirySeconds;
+				Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
+				
 				String sExpiresGMT = Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 				document.setExtraHeaderValue("Expires", sExpiresGMT, true);
+				
+				addCacheControlHeader(document, null);
 			}
 			RequestReturnCode = RET_OK;
 		}
 		return RequestReturnCode;
+	}
+	
+	private void addCacheControlHeader(HTMLDocument document, ArrayList<String> headers)
+	{
+		int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
+		//Cache-Control: max-age=533280
+		String sCacheValue = "max-age="+iMaxEpirySeconds + " must-revalidate";
+		
+		if(document!=null)
+		{			
+			document.setExtraHeaderValue("Cache-Control", sCacheValue, true);
+		}
+		
+		if(headers!=null && Util.getMIMELine(headers, "Cache-Control")==null)
+		{
+			headers.add("Cache-Control: " + sCacheValue);
+		}
+		
 	}
 
 	/**
