@@ -1395,8 +1395,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		long lStart = System.currentTimeMillis();
 		//guess that means we're after a page, action or something
-		int RequestReturnCode = processDesignElementRequest(document_path, docHTML, bForceClientPull, bByPassSecurity);
-		if(RequestReturnCode==RET_FILENOTFOUND || RequestReturnCode==RET_FORBIDDEN) return RequestReturnCode;
+		int iRequestReturnCode = processDesignElementRequest(document_path, docHTML, bForceClientPull, bByPassSecurity);
+		if(iRequestReturnCode==RET_FILENOTFOUND || iRequestReturnCode==RET_FORBIDDEN) return iRequestReturnCode;
 
 		if(docHTML.designObject!=null && docHTML.designObject.getDesignType()==DesignElement.DESIGN_TYPE_BUSINESSWIDGET)
 		{
@@ -1408,7 +1408,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		}
 
 
-		if((RequestReturnCode!=RET_SEEOTHER || !bGet) && RequestReturnCode!=RET_NOT_MODIFIED)
+		if((iRequestReturnCode!=RET_SEEOTHER || !bGet) && iRequestReturnCode!=RET_NOT_MODIFIED)
 		{
 			docHTML.prepare();
 			//System.out.println(docHTML.toString());
@@ -1428,7 +1428,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(act_return!=null && act_return.RedirectTo!=null && act_return.RedirectTo.length()!=0)
 			{
 				m_NewLocation = act_return.RedirectTo;
-				RequestReturnCode=RET_SEEOTHER;
+				iRequestReturnCode=RET_SEEOTHER;
 			}
 			else
 			{
@@ -1463,7 +1463,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			}//no action redirect
 		}// !see other
 
-		return RequestReturnCode;
+		return iRequestReturnCode;
 	}
 
 	/**
@@ -2719,7 +2719,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			String sRedirect = document.getItemValue(Document.PAGE_REDIRECT_ITEM);
 			if(sRedirect==null || sRedirect.trim().length()==0) sRedirect = sRequestURI;      
-			document.rPath = new RequestPath(sRedirect);//new RequestPath(document.getItemValue(Document.PAGE_REDIRECT_ITEM));
+			document.rPath = new RequestPath(sRedirect);
 			if(document.rPath.Action.equalsIgnoreCase(DesignElement.PARAMETER_SAVEPAGE)) document.rPath = new RequestPath(document.rPath.getPathToApplication());
 			sRequestURI = document.rPath.getFullPath();
 		}
