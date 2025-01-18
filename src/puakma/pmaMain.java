@@ -93,18 +93,17 @@ public class pmaMain extends Thread
 		boolean bFirstTime=true;
 		while(bFirstTime || System.getProperty(PUAKMA_RESTART).equals("1"))
 		{
-			Vector v = new Vector();
+			Vector<File> v = new Vector<File>();
 			setParameters(szConfigFile, v);
 			bFirstTime = false;
 			System.setProperty(PUAKMA_RESTART, "0");
 			try
-			{
-				pmaClassLoader loader = new pmaClassLoader(v);
-				Object objServer;
+			{								
 				System.out.println("");
 				System.out.println("");
 				System.out.println("-- STARTING SERVER --");
-				objServer = (loader.loadClass(szServerClass)).newInstance();
+				pmaClassLoader loader = new pmaClassLoader(v);
+				Object objServer = (loader.loadClass(szServerClass)).newInstance();
 				((Runnable)objServer).run();
 				loader = null;
 				objServer = null;
@@ -127,7 +126,7 @@ public class pmaMain extends Thread
 	/**
 	 * Loads the jars/classes needed to kick the whole thing off
 	 */
-	private static void setParameters(String szConfigFile, Vector v)
+	private static void setParameters(String szConfigFile, Vector<File> v)
 	{
 		Properties propConfig=new Properties(); //configuration parameters
 		try
@@ -155,7 +154,7 @@ public class pmaMain extends Thread
 	/**
 	 * Add the AddIn path to the classpath
 	 */
-	private static void addClasses(String szPath, Vector v)
+	private static void addClasses(String szPath, Vector<File> v)
 	{
 		if(szPath==null) return;
 		File fDir = new File(szPath);
@@ -194,7 +193,7 @@ public class pmaMain extends Thread
 	/**
 	 *
 	 */
-	private static void addJDBCJars(String szPath, Vector v)
+	private static void addJDBCJars(String szPath, Vector<File> v)
 	{
 		if(szPath==null) return;
 		File fJDBCDir = new File(szPath);

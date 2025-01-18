@@ -11,6 +11,37 @@
         </sealing>
     </manifest>
     <selectedElements exportClassFiles="true" exportJavaFiles="false" exportOutputFolder="false">
-        <javaElement handleIdentifier="=Puakma/src"/>
+        <file path="/Puakma/src/gpl.txt"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma{pmaClassLoader.java"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma{pmaMain.java"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.SOAP"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.agenda"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.booster"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.cluster"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.db"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.http"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.http.action"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.http.document"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.http.log"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.http.util"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.mail"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.stats"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.widgie"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.coder"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.error"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.jdbc"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.license"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.pooler"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.port"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.security"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.server"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.setup"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.system"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.util"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.util.math.formulacalculator"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.util.math.formulacalculator.functions"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;puakma.util.parsers.html"/>
+        <javaElement handleIdentifier="=Puakma/src&lt;res"/>
     </selectedElements>
 </jardesc>

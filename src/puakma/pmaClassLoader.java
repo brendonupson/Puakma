@@ -65,7 +65,7 @@ public class pmaClassLoader extends ClassLoader
 	 * Cache of the loaded classes. This contains ClassCacheEntry keyed
 	 * by class names.
 	 */
-	private Hashtable cache;
+	private Hashtable<String, ClassCacheEntry> cache = new Hashtable<String, ClassCacheEntry>();;
 
 	/**
 	 * The classpath which this classloader searches for class definitions.
@@ -74,7 +74,7 @@ public class pmaClassLoader extends ClassLoader
 	 * <p>
 	 * It may be empty when only system classes are controlled.
 	 */
-	private Vector repository;
+	private Vector<File> repository;
 
 	/**
 	 * Private class used to maintain information about the classes that
@@ -121,31 +121,25 @@ public class pmaClassLoader extends ClassLoader
 	 *        in the vector are not a file instance or the file is not
 	 *        a valid directory or a zip/jar file.
 	 */
-	public pmaClassLoader(Vector classRepository)
-	throws IllegalArgumentException
+	public pmaClassLoader(Vector<File> classRepository)
+			throws IllegalArgumentException
 	{
 		// Create the cache of loaded classes
-		cache = new Hashtable();
+		//cache = new Hashtable();
 
 		// Verify that all the repository are valid.
+		/*//fixed 18/1/2025 Generics added
 		Enumeration e = classRepository.elements();
 		while(e.hasMoreElements()) {
 			Object o = e.nextElement();
 
-			// Check to see if element is a File instance.
-			/*try {
-                File file = (File) o;
-            } catch (ClassCastException objectIsNotFile) {
-                throw new IllegalArgumentException("Object " + o
-                    + " is not a valid \"File\" instance");
-            }*/
 			//BJU 16/11/2006 to get past the above compiler warning
 			if(o instanceof File)
 				;
 			else
 				throw new IllegalArgumentException("Object " + o + " is not a valid \"File\" instance");
-
 		}
+		 */
 
 		// Store the class repository for use
 		this.repository = classRepository;
@@ -168,7 +162,7 @@ public class pmaClassLoader extends ClassLoader
 	 *             find a the requested class.
 	 */
 	protected synchronized Class loadClass(String name, boolean resolve)
-	throws ClassNotFoundException
+			throws ClassNotFoundException
 	{
 		// The class object that will be returned.
 		Class c = null;
@@ -200,10 +194,10 @@ public class pmaClassLoader extends ClassLoader
 			try {
 				if (file.isDirectory()) {
 					classData =
-						loadClassFromDirectory(file, name, classCache);
+							loadClassFromDirectory(file, name, classCache);
 				} else {
 					classData =
-						loadClassFromZipfile(file, name, classCache);
+							loadClassFromZipfile(file, name, classCache);
 				}
 			} catch(IOException ioe) {
 				// Error while reading in data, consider it as not found
@@ -219,11 +213,11 @@ public class pmaClassLoader extends ClassLoader
 					//System.out.println("definePackage: classname=["+name + "]" + sPackageName);
 					definePackage(sPackageName, "title", "specversion",
 							"TornadoServer",  "impltitle", "implversion",
-								"implVendor", null);
+							"implVendor", null);
 				} 
 				//else
 				//	System.out.println(sPackageName + " is already defined");
-				
+
 				c = defineClass(name, classData, 0, classData.length);
 				// Cache the result;
 				classCache.loadedClass = c;
@@ -278,7 +272,7 @@ public class pmaClassLoader extends ClassLoader
 	 *             find a definition for the class.
 	 */
 	private Class loadSystemClass(String name, boolean resolve)
-	throws NoClassDefFoundError, ClassNotFoundException
+			throws NoClassDefFoundError, ClassNotFoundException
 	{
 		Class c = findSystemClass(name);
 		// Throws if not found.
@@ -336,7 +330,7 @@ public class pmaClassLoader extends ClassLoader
 	 */
 	private byte[] loadClassFromDirectory(File dir, String name,
 			ClassCacheEntry cache)
-	throws IOException
+					throws IOException
 	{
 		// Translate class name to file name
 		String classFileName = name.replace('.', File.separatorChar) + ".class";
@@ -418,13 +412,13 @@ public class pmaClassLoader extends ClassLoader
 		}
 		return null;
 	}
-	
-	
+
+
 	/**
 	 * Loads all the bytes of an InputStream.
 	 */
 	private byte[] loadBytesFromStream(InputStream in, int length)
-	throws IOException
+			throws IOException
 	{
 		byte[] buf = new byte[length];
 		int nRead, count = 0;
@@ -437,7 +431,7 @@ public class pmaClassLoader extends ClassLoader
 
 		return buf;
 	}
-	
+
 	/**
 	 * Read until end of stream
 	 * @param in
@@ -480,10 +474,10 @@ public class pmaClassLoader extends ClassLoader
 		if (s == null) 
 		{
 			// Try to find it from every repository
-			Enumeration repEnum = repository.elements();
+			Enumeration<File> repEnum = repository.elements();
 			while (repEnum.hasMoreElements()) 
 			{
-				File file = (File) repEnum.nextElement();
+				File file = repEnum.nextElement();
 				if (file.isDirectory()) 
 				{
 					s = loadResourceFromDirectory(file, name);
@@ -614,11 +608,13 @@ public class pmaClassLoader extends ClassLoader
 		}
 
 		// We got here so we have to look for the resource in our list of repository elements
-		Enumeration repEnum = repository.elements();
-		while (repEnum.hasMoreElements()) {
-			File file = (File) repEnum.nextElement();
+		Enumeration<File> repEnum = repository.elements();
+		while (repEnum.hasMoreElements()) 
+		{
+			File file = repEnum.nextElement();
 			// Construct a file://-URL if the repository is a directory
-			if (file.isDirectory()) {
+			if (file.isDirectory()) 
+			{
 				String fileName = name.replace('/', File.separatorChar);
 				File resFile = new File(file, fileName);
 				if (resFile.exists()) {
@@ -631,7 +627,8 @@ public class pmaClassLoader extends ClassLoader
 					}
 				}
 			}
-			else {
+			else 
+			{
 				// a jar:-URL *could* change even between minor releases, but
 				// didn't between JVM's 1.1.6 and 1.3beta. Tested on JVM's from
 				// IBM, Blackdown, Microsoft, Sun @ Windows and Sun @Solaris

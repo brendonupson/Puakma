@@ -463,11 +463,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				m_pSystem.doError("HTTPRequest.SessionLimitReached", new String[]{m_pSystem.getSessionCount()+""}, this);
 				ArrayList<String> extra_headers = new ArrayList<String>();
 				String szRedirect = m_http_server.m_sHTTPMaxSessionRedirect;
-				if(szRedirect.indexOf("://")>0 && szRedirect.toLowerCase().startsWith("http"))
+				if(szRedirect!=null && szRedirect.indexOf("://")>0) //&& szRedirect.toLowerCase().startsWith("http"))
 				{
 					//302 redirect to another host
 					extra_headers.add("Location: " + szRedirect);
-					sendHTTPResponse(RET_SEEOTHER, /*"Redirected to: <a href=\"" + szRedirect + "\">" + szRedirect + "</a>"*/"Moved", extra_headers, HTTP_VERSION, "text/html", null);
+					sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, "text/html", null);
 				}
 				else
 				{
@@ -1054,8 +1054,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					document_path = szDefaultURL;
 				else
 				{
-					String sURL = szDefaultURL.toLowerCase();
-					if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect
+					//String sURL = szDefaultURL.toLowerCase();
+					//if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect
+					if(szDefaultURL.indexOf("://")>0) //eg https://hostname
 					{
 						ArrayList<String> extra_headers = new ArrayList<String>();
 						extra_headers.add("Location: " + szDefaultURL);
@@ -1077,8 +1078,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(szRedirectURL!=null)
 		{
 			ArrayList<String> extra_headers = new ArrayList<String>();
+			/*
 			String sURL = szRedirectURL.toLowerCase();
-			if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect
+			if(sURL.startsWith("http:") || sURL.startsWith("https:") || sURL.startsWith("ftp:")) //full 302 redirect			
 			{          
 				extra_headers.add("Location: " + szRedirectURL);
 			}
@@ -1087,7 +1089,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				String sProto = null;
 				if(m_bSecure) sProto = "https://"; else sProto = "http://"; //assume must be http of some sort
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + szRedirectURL);
-			}          
+			} */
+			extra_headers.add("Location: " + szRedirectURL);
 			sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, null, null);
 			return;        
 		}
@@ -1142,9 +1145,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				document_path += rPath.Parameters;
 				rPath = new RequestPath(document_path);
 				ArrayList<String> extra_headers = new ArrayList<String>();
-				String sProto = null;
+				/*String sProto = null;
 				if(m_bSecure) sProto = "https://"; else sProto = "http://"; //assume must be http of some sort
-				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);				
+				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);	
+				*/
+				extra_headers.add("Location: " + document_path);
 				sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, "text/html", null);
 				return;
 			}
@@ -1156,9 +1161,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(sForceSecureConnectionParam != null && sForceSecureConnectionParam.equals("1"))
 			{
 				m_pSystem.doDebug(pmaLog.DEBUGLEVEL_STANDARD, "Secure connection is required: '%s'", new String[]{document_path}, m_pSession);
-				ArrayList<String> extra_headers = new ArrayList<String>();
+				ArrayList<String> extra_headers = new ArrayList<String>();				
 				String sProto = "https://";
-				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);				
+				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);					
 				sendHTTPResponse(RET_SEEOTHER, "SSL Required", extra_headers, HTTP_VERSION, "text/html", null);
 				return;
 			}
@@ -1313,15 +1318,17 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					docHTML.getContentType(), null);
 			break;
 		case RET_SEEOTHER: //allow for relative paths, full incl. http://, and on server /path.pma
-			String szLocation = m_NewLocation;
+			/*String szLocation = m_NewLocation;
 			if(szLocation.indexOf("://")<0)
 			{
-				if(szLocation.charAt(0)=='/') //docHTML.getItemValue("@Host")
+				if(szLocation.charAt(0)=='/')
 					szLocation = m_sHTTPURLPrefix + "://" + m_sRequestedHost + szLocation;
 				else
 					szLocation = m_sHTTPURLPrefix + "://" + m_sRequestedHost + '/' + szLocation;
 			}
 			extra_headers.add("Location: " + szLocation);
+			*/
+			extra_headers.add("Location: " + m_NewLocation);
 			sendHTTPResponse(iHTTPReplyCode, "Moved", extra_headers, HTTP_VERSION, docHTML.getContentType(), docHTML.getContent());
 			break;
 		case RET_FILENOTFOUND:
