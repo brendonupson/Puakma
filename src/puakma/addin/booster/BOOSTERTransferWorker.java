@@ -489,7 +489,7 @@ public class BOOSTERTransferWorker
 			m_bSendSessionCookie = false;
 			if(m_Parent.getPrincipal()!=null)
 			{
-				String sHTTPSessionCookie = m_Parent.m_session.getCookieString(HTTPServer.SESSIONID_LABEL, "/", null);
+				String sHTTPSessionCookie = m_Parent.m_session.getCookieString(HTTPServer.SESSIONID_LABEL, "/", null, false, true);
 				out_lines.add(sHTTPSessionCookie);
 			}
 		}
@@ -711,7 +711,7 @@ public class BOOSTERTransferWorker
 			m_bSendSessionCookie = false;
 			if(m_Parent.getPrincipal()!=null)
 			{
-				String sHTTPSessionCookie = m_Parent.m_session.getCookieString(HTTPServer.SESSIONID_LABEL, "/", null);
+				String sHTTPSessionCookie = m_Parent.m_session.getCookieString(HTTPServer.SESSIONID_LABEL, "/", null, false, true);
 				sbOut.append(sHTTPSessionCookie);
 				sbOut.append(HTTP_NEWLINE);
 			}
@@ -732,7 +732,7 @@ public class BOOSTERTransferWorker
 	 */
 	private String getSetCookieHeader()
 	{
-		return m_Parent.m_session.getCookieString(BOOSTER.SESSIONID_LABEL, "/", getHostOnly(m_sRequestedHost));
+		return m_Parent.m_session.getCookieString(BOOSTER.SESSIONID_LABEL, "/", getHostOnly(m_sRequestedHost), false, true);
 	}
 
 	/**

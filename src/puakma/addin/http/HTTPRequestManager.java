@@ -2141,7 +2141,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			byte bufSecret[] = makeWebSSOSecret();          
 			ltpa.setExpiryDate(getLtpaSessionExpiryDate());
 			//this domain thing may not be right - what about multi-homed servers?? !!
-			String sLtpaCookie = ltpa.getAsCookie(bufSecret, sPath, m_pSystem.getSystemProperty("WEBSSODomain"), false, m_pSession.getSSOExpiryDate());
+			boolean bIsSecure = Util.toInteger(m_pSystem.getSystemProperty("WEBSSOCookieSecure"))==1;
+			String sLtpaCookie = ltpa.getAsCookie(bufSecret, sPath, m_pSystem.getSystemProperty("WEBSSODomain"), bIsSecure, m_pSession.getSSOExpiryDate(), true);
 			//m_pSystem.doDebug(0, sLtpaCookie, this);
 			extra_headers.add("Set-Cookie: "+sLtpaCookie);
 			//System.out.println(sLtpaCookie);

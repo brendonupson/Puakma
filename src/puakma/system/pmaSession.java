@@ -264,7 +264,7 @@ public class pmaSession implements ErrorDetect
 	 * can be used with other things, eg BOOSTER 
 	 * This session is used to access the entire server, hence Path=/
 	 */
-	public String getCookieString(String sCookieName, String sPath, String sDomain)
+	public String getCookieString(String sCookieName, String sPath, String sDomain, boolean bIsSecure, boolean bIsHttpOnly)
 	{
 		if(sPath==null || sPath.trim().length()==0) sPath = "/";
 		if(sCookieName==null || sCookieName.length()==0) sCookieName = puakma.addin.http.HTTPServer.SESSIONID_LABEL;
@@ -273,6 +273,9 @@ public class pmaSession implements ErrorDetect
 		if(sDomain!=null && sDomain.trim().length()>0) sCookieDomain = "; domain="+sDomain;    
 		//expiry is controlled serverside if we the expiry is updated with each transaction
 		//and we don't want the overhead of resending the cookie every time
+		if(bIsSecure) sCookie += "; secure";
+		if(bIsHttpOnly) sCookie += "; httpOnly";
+		
 		return sCookie+sCookieDomain;
 	}
 
@@ -284,7 +287,7 @@ public class pmaSession implements ErrorDetect
 	 */
 	public String getCookieString(String sPath, String sDomain)
 	{
-		return getCookieString(HTTPServer.SESSIONID_LABEL, sPath, sDomain);
+		return getCookieString(HTTPServer.SESSIONID_LABEL, sPath, sDomain, false, true);
 	}
 
 	/**

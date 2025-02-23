@@ -283,7 +283,7 @@ public class LTPAToken
      * It will also set the expiry date embedded in the cookie to the same date
      *
      */
-    public String getAsCookie(byte bufSecret[], String sPath, String sDomain, boolean bIsSecure, Date dtCookieExpiry)
+    public String getAsCookie(byte bufSecret[], String sPath, String sDomain, boolean bIsSecure, Date dtCookieExpiry, boolean bIsHttpOnly)
     {
         StringBuilder sbReturn = new StringBuilder(256);
         if(dtCookieExpiry!=null) setExpiryDate(dtCookieExpiry); //override as there's no point storing on disk if the token expires before the cookie
@@ -298,7 +298,8 @@ public class LTPAToken
             sbReturn.append("; expires="+ Util.toGMTString(dtCookieExpiry));
         }
         
-        if(bIsSecure) sbReturn.append("; secure");        
+        if(bIsSecure) sbReturn.append("; secure");
+        if(bIsHttpOnly) sbReturn.append("; httpOnly");
         return sbReturn.toString();
     }
     

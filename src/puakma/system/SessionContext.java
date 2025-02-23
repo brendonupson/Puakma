@@ -292,9 +292,9 @@ public class SessionContext implements ErrorDetect,Cloneable
 		return pSession.getCookieString(sPath, sDomain);
 	}
 
-	public String getCookieString(String sCookieName, String sPath, String sDomain)
+	public String getCookieString(String sCookieName, String sPath, String sDomain, boolean bIsSecure, boolean bIsHttpOnly)
 	{
-		return pSession.getCookieString(sCookieName, sPath, sDomain);
+		return pSession.getCookieString(sCookieName, sPath, sDomain, bIsSecure, bIsHttpOnly);
 	}
 
 	public void setFirstName(String szFirstName)
