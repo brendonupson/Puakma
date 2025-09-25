@@ -2966,10 +2966,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		return m_http_server.getDesignElement(szAppGroup, szApplication, szDesignName, iType);
 	}
 
+	/*
 	public DesignElement getDesignElement(SessionContext pSession, String szApplication, String szAppGroup, String szDesignName, int iType)
 	{
 		return m_http_server.getDesignElement(szAppGroup, szApplication, szDesignName, iType);
-	}
+	}*/
 
 
 

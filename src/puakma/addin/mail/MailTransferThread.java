@@ -88,7 +88,9 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 	{
 		int iDeliveryCount=0;
 		pStatus = pMailer.createStatusLine(" " + getErrorSource());
-		Connection cx=null;
+		Connection cx = null;
+		Statement stmt = null;
+		ResultSet rs = null;
 		String sReply; //message sent flag
 
 		//System.out.println(Thread.currentThread().getName() + " running..." );
@@ -99,19 +101,19 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		{
 			cx = pSystem.getSystemConnection();
 			String szQuery = "SELECT * FROM MAILHEADER WHERE MailBodyID=" + m_lMessageID;
-			Statement Stmt = cx.createStatement();
-			ResultSet RS = Stmt.executeQuery(szQuery);
-			while(RS.next())
+			stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			rs = stmt.executeQuery(szQuery);
+			while(rs.next())
 			{
-				long MailHeaderID = RS.getLong("MailHeaderID");
-				int iRetries = RS.getInt("RetryCount");
+				long MailHeaderID = rs.getLong("MailHeaderID");
+				int iRetries = rs.getInt("RetryCount");
 				if(iRetries<pMailer.getMailMaxRetryCount())
 				{
-					String szRecipient = RS.getString("Recipient");          
+					String szRecipient = rs.getString("Recipient");          
 					sReply = "";
 					if(MailHeaderID>0) 
 					{
-						sReply = transferMail(szRecipient, MailHeaderID);
+						sReply = transferMail(szRecipient, MailHeaderID); //FIXME Bottleneck. system connection held open while mail transfer completes
 						pMailer.incrementStatistic(MAILER.STATISTIC_KEY_MAILSTOTAL);
 					}
 					if(sReply.length()==0)
@@ -150,9 +152,7 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 					markMailDead(MailHeaderID);
 				}
 
-			}
-			RS.close();
-			Stmt.close();
+			}			
 		}
 		catch (Exception sqle)
 		{
@@ -161,6 +161,8 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		}
 		finally
 		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
 			pSystem.releaseSystemConnection(cx);
 		}
 		pMailer.removeMessageID(m_lMessageID);

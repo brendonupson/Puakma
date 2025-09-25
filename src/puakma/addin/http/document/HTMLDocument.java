@@ -975,6 +975,9 @@ public class HTMLDocument extends Document implements Cloneable
 	{
 		ArrayList<String> vReturn=null;
 		Connection cxSys=null;
+		Statement stmt = null;
+		ResultSet rs = null;
+		
 		StringBuilder sbReturn=null;
 		String szAppGroup=rPath.Group, szApplication=rPath.Application;
 		String szOrderClause=" ORDER BY KeywordOrder,Data";
@@ -993,15 +996,13 @@ public class HTMLDocument extends Document implements Cloneable
 			String szQuery = "SELECT Data FROM APPLICATION,KEYWORD,KEYWORDDATA WHERE LOWER(APPLICATION.AppName)='" + szApplication.toLowerCase() + "' " + szGroupClause + " AND APPLICATION.AppID=KEYWORD.AppID AND KEYWORD.KeywordID=KEYWORDDATA.KeywordID " + szConnectJoin + szOrderClause;
 			//System.out.println("[" + szQuery + "]");
 			cxSys = pSystem.getSystemConnection();
-			Statement Stmt = cxSys.createStatement();
-			ResultSet RS = Stmt.executeQuery(szQuery);
-			while(RS.next())
+			stmt = cxSys.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			rs = stmt.executeQuery(szQuery);
+			while(rs.next())
 			{
 				if(vReturn==null) vReturn = new ArrayList<String>();
-				vReturn.add(RS.getString("Data"));
-			}
-			RS.close();
-			Stmt.close();
+				vReturn.add(rs.getString("Data"));
+			}			
 		}
 		catch(Exception de)
 		{
@@ -1009,6 +1010,8 @@ public class HTMLDocument extends Document implements Cloneable
 		}
 		finally
 		{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
 			pSystem.releaseSystemConnection(cxSys);
 		}
 		if(vReturn==null) return "";
@@ -1053,7 +1056,7 @@ public class HTMLDocument extends Document implements Cloneable
 			String szQuery = "SELECT Data FROM APPLICATION,KEYWORD,KEYWORDDATA WHERE LOWER(APPLICATION.AppName)='" + sApplication.toLowerCase() + "' " + szGroupClause + " AND APPLICATION.AppID=KEYWORD.AppID AND KEYWORD.KeywordID=KEYWORDDATA.KeywordID " + szConnectJoin + sOrderClause;
 			//System.out.println("[" + szQuery + "]");
 			cxSys = pSystem.getSystemConnection();
-			stmt = cxSys.createStatement();
+			stmt = cxSys.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			rs = stmt.executeQuery(szQuery);
 			while(rs.next())
 			{

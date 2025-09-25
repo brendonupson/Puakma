@@ -443,9 +443,9 @@ public class pmaSerial implements TableRowImportCallback
 
 			zipoutput.write(getXMLHeader().getBytes("UTF-8"));
 			zipoutput.write(("<application name=\"" + rPath.getFullPath() + "\">\r\n").getBytes("UTF-8"));
-			stmt = m_cx.createStatement();
-			stmt2 = m_cx.createStatement();
-			stmt3 = m_cx.createStatement();
+			stmt = m_cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt2 = m_cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt3 = m_cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			String sAppIDWhere = " WHERE AppID=" + lAppID;
 			exportTable(stmt, "APPLICATION", sAppIDWhere, "", zipoutput);
 			exportTable(stmt, "APPPARAM", sAppIDWhere, "", zipoutput);      
@@ -581,7 +581,7 @@ public class pmaSerial implements TableRowImportCallback
 		{
 			String szQuery = "SELECT AppID FROM APPLICATION WHERE UPPER(AppName)='" + sApplication.toUpperCase() + "' " + szGroupClause;
 			//System.out.println(szQuery);
-			stmt = m_cx.createStatement();
+			stmt = m_cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			rs = stmt.executeQuery(szQuery);
 			if(rs.next())
 			{

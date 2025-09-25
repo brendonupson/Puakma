@@ -22,6 +22,7 @@ package puakma.error;
 
 import puakma.jdbc.*;
 import puakma.system.*;
+import puakma.util.Util;
 import puakma.server.AddInMessage;
 import java.util.*;
 import java.text.*;
@@ -291,21 +292,25 @@ public class pmaLog
 	public void clearServerLog()
 	{
 		Connection cx=null;
+		Statement stmt = null;
 
 		if(m_dbPool!=null)
 		{
 			try
 			{
 				cx = m_dbPool.getConnection();				
-				Statement Stmt = cx.createStatement();
-				Stmt.execute("DELETE FROM PMALOG");
-				Stmt.close();        
+				stmt = cx.createStatement();
+				stmt.execute("DELETE FROM PMALOG");				       
 			}
 			catch(Exception e)
 			{
 				System.out.println("Could not clear RDBMS log: " + e.toString());
 			}
-			m_dbPool.releaseConnection(cx);
+			finally
+			{
+				Util.closeJDBC(stmt);
+				m_dbPool.releaseConnection(cx);
+			}
 		}
 		if(m_printLog!=null)
 		{

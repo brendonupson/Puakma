@@ -180,7 +180,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 		{
 			cx = SysCtx.getSystemConnection();
 			String sQuery = "SELECT FirstName,LastName,UserName,LastLogin,LastLoginUserAgent,LastLoginAddress,LoginFlag FROM PERSON WHERE UserName=?";
-			prepStmt = cx.prepareStatement(sQuery);
+			//prepStmt = cx.prepareStatement(sQuery);
 			prepStmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			prepStmt.setString(1, szCanonicalName);        
 			rs = prepStmt.executeQuery();
@@ -225,9 +225,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 		ht.put(sGroup, sGroup);
 		try
 		{
-			cx = SysCtx.getSystemConnection();
-			//String szQuery = "SELECT PMAGROUPMEMBER.Member FROM PMAGROUP,PMAGROUPMEMBER WHERE UPPER(PMAGROUP.GroupName)='" + sGroup.toUpperCase() + "' AND PMAGROUP.GroupID=PMAGROUPMEMBER.GroupID";
-			//stmt = cx.createStatement();
+			cx = SysCtx.getSystemConnection();			
 			String szQuery = "SELECT PMAGROUPMEMBER.Member FROM PMAGROUP,PMAGROUPMEMBER WHERE UPPER(PMAGROUP.GroupName)=? AND PMAGROUP.GroupID=PMAGROUPMEMBER.GroupID";
 			stmt = cx.prepareStatement(szQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			stmt.setString(1, sGroup.toUpperCase());

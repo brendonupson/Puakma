@@ -209,7 +209,7 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 		try
 		{
 			cx = m_pSystem.getSystemConnection();			
-			stmt = cx.createStatement();
+			stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			rs = stmt.executeQuery("SELECT COUNT(*) FROM MAILHEADER WHERE MessageStatus='D'");
 			if(rs.next())
 			{

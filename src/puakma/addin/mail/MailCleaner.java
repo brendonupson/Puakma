@@ -134,16 +134,16 @@ public class MailCleaner implements pmaThreadInterface, ErrorDetect
 	private void deleteMessage(long lMailBodyID)
 	{
 		Connection cx=null;
+		Statement stmt = null;
 		try
 		{
 			cx = pSystem.getSystemConnection();
 			//can I not do both at once??
 			String szQuery1 = "DELETE FROM MAILATTACHMENT WHERE MailBodyID=" + lMailBodyID;
 			String szQuery2 = "DELETE FROM MAILBODY WHERE MailBodyID=" + lMailBodyID;
-			Statement Stmt = cx.createStatement();
-			Stmt.execute(szQuery1);
-			Stmt.execute(szQuery2);
-			Stmt.close();
+			stmt = cx.createStatement();
+			stmt.execute(szQuery1);
+			stmt.execute(szQuery2);			
 		}
 		catch (Exception sqle)
 		{
@@ -151,6 +151,7 @@ public class MailCleaner implements pmaThreadInterface, ErrorDetect
 		}
 		finally
 		{
+			Util.closeJDBC(stmt);
 			pSystem.releaseSystemConnection(cx);
 		}
 	}

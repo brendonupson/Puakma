@@ -252,7 +252,7 @@ public class DesignElement implements Cloneable, CacheableItem
 	{		
 		for(int i=0; i<m_arrParameters.size(); i++)
 		{
-			Parameter p = (Parameter)m_arrParameters.get(i);
+			Parameter p = m_arrParameters.get(i);
 			if(p!=null && p.Name.equalsIgnoreCase(paramName)) return p.Value;
 		}
 
@@ -263,7 +263,7 @@ public class DesignElement implements Cloneable, CacheableItem
 	/**
 	 * Returns an ArrayList describing all parameters
 	 */
-	public ArrayList getParameters()
+	public ArrayList<Parameter> getParameters()
 	{
 		return m_arrParameters;
 	}
@@ -293,11 +293,11 @@ public class DesignElement implements Cloneable, CacheableItem
 	 * @return
 	 */
 	public int getMinifyLevel() 
-	{
-		String sMinifyLevel = getParameterValue(PARAMETER_MINIFYLEVEL);
+	{		
 		try{
 			//must be Javascript and have minify set.
-			if(m_sContentType.indexOf("/javascript")<0) return 0;			
+			if(m_sContentType.indexOf("/javascript")<0) return 0;
+			String sMinifyLevel = getParameterValue(PARAMETER_MINIFYLEVEL);
 			return Integer.parseInt(sMinifyLevel);
 		}
 		catch(Exception e){}
