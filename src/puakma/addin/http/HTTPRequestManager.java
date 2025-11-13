@@ -1268,6 +1268,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		docHTML.setCookiesInHTTPHeader(extra_headers); //copy from doc to arraylist
 		if(docHTML.designObject!=null && !bNotModified) 
 		{
+			boolean bIsCacheNoStore = false;
 			//don't bother sending a last modified or expires
 			int iDesignType = docHTML.designObject.getDesignType(); 
 			if(iDesignType == DesignElement.DESIGN_TYPE_RESOURCE)
@@ -1288,6 +1289,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(iDesignType == DesignElement.DESIGN_TYPE_PAGE || 
 					iDesignType == DesignElement.DESIGN_TYPE_ACTION)
 			{   
+				bIsCacheNoStore = true;
 				Date dtNow = new Date();
 				String sDate = Util.formatDate(dtNow, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 
@@ -1302,7 +1304,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					extra_headers.add(sExpires);
 				}
 			}
-			addCacheControlHeader(null, extra_headers);
+			addCacheControlHeader(null, extra_headers, bIsCacheNoStore);
 		}//last modified and expires block
 
 
@@ -1823,7 +1825,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
 			String sExpires = "Expires: " + puakma.util.Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 			extra_headers.add(sExpires);
-			addCacheControlHeader(null, extra_headers);
+			addCacheControlHeader(null, extra_headers, false);
 
 			String sReply = "";
 			if(iErrCode==RET_OK) sReply="OK";
@@ -2883,18 +2885,19 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				String sExpiresGMT = Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
 				document.setExtraHeaderValue("Expires", sExpiresGMT, true);
 				
-				addCacheControlHeader(document, null);
+				addCacheControlHeader(document, null, false);
 			}
 			RequestReturnCode = RET_OK;
 		}
 		return RequestReturnCode;
 	}
 	
-	private void addCacheControlHeader(HTMLDocument document, ArrayList<String> headers)
+	private void addCacheControlHeader(HTMLDocument document, ArrayList<String> headers, boolean bIsCacheNoStore)
 	{
 		int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
-		//Cache-Control: max-age=533280
-		String sCacheValue = "max-age="+iMaxEpirySeconds + " must-revalidate";
+		//Cache-Control: max-age=533280 must-revalidate
+		//Note: firefox has a crazy back forward cache which aggressively caches pages. no-store added to prevent caching of pages and actions
+		String sCacheValue = bIsCacheNoStore ? "no-store" : "max-age="+iMaxEpirySeconds + " must-revalidate";
 		
 		if(document!=null)
 		{			
