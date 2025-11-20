@@ -2895,9 +2895,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private void addCacheControlHeader(HTMLDocument document, ArrayList<String> headers, boolean bIsCacheNoStore)
 	{
 		int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
+		if(iMaxEpirySeconds<0) iMaxEpirySeconds = 0;
 		//Cache-Control: max-age=533280 must-revalidate
 		//Note: firefox has a crazy back forward cache which aggressively caches pages. no-store added to prevent caching of pages and actions
-		String sCacheValue = bIsCacheNoStore ? "no-store" : "max-age="+iMaxEpirySeconds + " must-revalidate";
+		String sCacheValue = bIsCacheNoStore ? "no-store" : "max-age="+iMaxEpirySeconds + ", must-revalidate";
 		
 		if(document!=null)
 		{			
