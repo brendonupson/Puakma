@@ -196,7 +196,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 		String s = sAlias.trim().toLowerCase();
 		if ( !m_map.containsKey( s ) )
-			throw new Exception( "Error getConnection(). Alias: " + sAlias + " has not been registered." );
+			throw new Exception( "Error getConnection(). Alias: \"" + sAlias + "\" has not been registered." );
 
 		dbConnectionPooler pooler = (dbConnectionPooler)m_map.get( s );
 		Connection cx = pooler.getConnection();
@@ -204,6 +204,8 @@ public class dbConnectionPoolManager implements ErrorDetect
 		//the next line ensures a pool created with bad credentials etc will be removed from the manager
 		//thus the next time it is called a new pool will be created
 		if(cx==null && pooler.getUsedItemCount()==0) removePooler(sAlias);
+		if(cx!=null) cx.setAutoCommit(true); //reset to true so caller get it in a consistent state
+		
 		return cx;
 
 	}

@@ -538,32 +538,37 @@ public class AGENDA extends pmaAddIn
 	 */
 	private void cleanDeadThreads()
 	{
-		for(int i=0; i<m_vRunningActions.size(); i++)
+		//for(int i=0; i<m_vRunningActions.size(); i++)
+		for(int i = m_vRunningActions.size() - 1; i >= 0; i--)
 		{
-			AgendaAction aAction = (AgendaAction)m_vRunningActions.elementAt(i);
-			if(aAction!=null)
-			{
-				if(!aAction.isRunning())
+			try {
+				AgendaAction aAction = (AgendaAction)m_vRunningActions.elementAt(i);
+				if(aAction!=null)
 				{
-					if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
-					continue;
+					if(!aAction.isRunning())
+					{
+						//if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
+						m_vRunningActions.remove(i);
+						continue;
+					}
+
+					long lRunSeconds = aAction.getRunningTimeSeconds();
+					if(m_lMaxRunSeconds>0 && lRunSeconds>0 && lRunSeconds>m_lMaxRunSeconds)
+					{
+						m_pSystem.doError("AGENDA.RunTooLong", new String[]{""+m_lMaxRunSeconds}, aAction);
+						this.incrementStatistic(STATISTIC_KEY_DEADACTIONSPERHOUR, 1);
+						aAction.requestQuit();
+						aAction.interrupt();
+					}
+					if(!aAction.isOK() || aAction.hasExceededInterruptLimit())
+					{
+						updateDesignBucket(aAction, false); //set no lastrun so it will run again
+						m_iErrCount++;
+						//if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
+						m_vRunningActions.remove(i);
+					}
 				}
-				
-				long lRunSeconds = aAction.getRunningTimeSeconds();
-				if(m_lMaxRunSeconds>0 && lRunSeconds>0 && lRunSeconds>m_lMaxRunSeconds)
-				{
-					m_pSystem.doError("AGENDA.RunTooLong", new String[]{""+m_lMaxRunSeconds}, aAction);
-					this.incrementStatistic(STATISTIC_KEY_DEADACTIONSPERHOUR, 1);
-					aAction.requestQuit();
-					aAction.interrupt();
-				}
-				if(!aAction.isOK() || aAction.hasExceededInterruptLimit())
-				{
-					updateDesignBucket(aAction, false); //set no lastrun so it will run again
-					m_iErrCount++;
-					if(m_vRunningActions.size()>i) m_vRunningActions.remove(i);
-				}
-			}			
+			}catch(ArrayIndexOutOfBoundsException e) { System.err.println("cleanDeadThreads(): " + e.toString());}
 		}
 	}
 

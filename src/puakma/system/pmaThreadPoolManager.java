@@ -80,10 +80,13 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 
 		//try to find an existing thread that has already run or is new
 		//System.out.println("*** trying to find an existing thread");
-		for(i=0; i<m_vThreads.size(); i++)
+		int iThreadCount = m_vThreads.size(); 
+		for(i=0; i<iThreadCount; i++)
 		{
-			t = (pmaThread)m_vThreads.get(i);
-			if(!t.isRunning() && t.isAlive()) return t;
+			try {
+				t = (pmaThread)m_vThreads.get(i);
+				if(!t.isRunning() && t.isAlive()) return t;
+			}catch(ArrayIndexOutOfBoundsException e) { System.err.println("getNextThread(): " + e.toString());}
 		}
 		//try to create a new thread
 		//System.out.println("*** trying to create a new thread");
@@ -96,16 +99,19 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 		//System.out.println("*** Pool is full - waiting");
 		long ltime = System.currentTimeMillis();
 		while(true)
-		{
-			for(i=0; i<m_vThreads.size(); i++)
+		{		
+			iThreadCount = m_vThreads.size();
+			for(i=0; i<iThreadCount; i++)
 			{
-				t = (pmaThread)m_vThreads.get(i);
-				if(!t.isRunning() && t.isAlive()) return t;
+				try {
+					t = (pmaThread)m_vThreads.get(i);
+					if(!t.isRunning() && t.isAlive()) return t;
+				}catch(ArrayIndexOutOfBoundsException e) { System.err.println("getNextThread() 2: " + e.toString());}
 				//Thread.yield();
 				//apparently .yield() can have unpredictable results across platforms
-				try{Thread.sleep(1);}catch(Exception w){}
+				//try{Thread.sleep(1);}catch(Exception w){}
 			}
-			//try{Thread.sleep(100);}catch(Exception w){}
+			try{Thread.sleep(200);}catch(Exception w){}
 
 			// if we waited the whole time bail.
 			if( ((System.currentTimeMillis() - ltime) > m_iThreadWaitTimeMS) && m_iThreadWaitTimeMS>=0) break;
@@ -161,7 +167,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 * Brutally kill a thread
 	 */
 	public void killThread(String sThreadID)
-	{        
+	{     
 		for(int i=0; i<m_vThreads.size(); i++)
 		{
 			pmaThread t = (pmaThread)m_vThreads.get(i);
@@ -181,7 +187,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 * get a list of active threads
 	 */
 	public String getThreadDetail()
-	{        
+	{        		
 		StringBuilder sbOut = new StringBuilder(m_vThreads.size()*50);
 		for(int i=0; i<m_vThreads.size(); i++)
 		{
@@ -206,8 +212,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 		//pSystem.doDebug(pmaLog.DEBUGLEVEL_VERBOSE, "cleanPool()", this);
 		//pSystem.doDebug(0, "Cleaning Pool.... " + iCurrentThreadCount + " threads "+getActiveThreadCount() + " active", this);
 
-		int i;
-		for(i=0; i<m_vThreads.size(); i++)
+		for(int i = m_vThreads.size() - 1; i >= 0; i--)
 		{
 			pmaThread t = (pmaThread)m_vThreads.get(i);
 			//if not alive AND not running
@@ -216,15 +221,14 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 				//pSystem.doDebug(0, "Removing dead thread " + t.getName(), this);
 				m_vThreads.removeElementAt(i);
 				m_iCurrentThreadCount--;
-				t=null;
 			}
 		}
 
 		if(m_bShutdown) return;
-		
-		//now boost pool back up to min threads
-		for(i=m_iCurrentThreadCount; i<m_iMinThreads; i++)
-		{   
+
+		//now boost pool back up to __min__ threads
+		for(int i = m_iCurrentThreadCount; i < m_iMinThreads; i++)
+		{
 			if(m_bShutdown) break;
 			createThread();
 			//pSystem.doDebug(0, "Creating thread count="+iCurrentThreadCount , this);
@@ -270,12 +274,11 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 */
 	public int getActiveThreadCount()
 	{
-		int iActive=0;
-		pmaThread t;
+		int iActive=0;		 
 
 		for(int i=0; i<m_vThreads.size(); i++)
 		{
-			t = (pmaThread)m_vThreads.get(i);
+			pmaThread t = (pmaThread)m_vThreads.get(i);
 			if(t.isRunning()) iActive++;
 		}
 		return iActive;

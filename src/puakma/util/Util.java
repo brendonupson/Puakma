@@ -70,6 +70,9 @@ import puakma.system.SystemContext;
 public class Util
 {
 	public static final String SHORT_DATE = "shortdate";
+
+	private static final ThreadLocal<NumberFormat> NUMBER_FORMAT =
+		ThreadLocal.withInitial(NumberFormat::getInstance);
 	public static final String LONG_DATE = "longdate";
 	public static final String SHORT_DATE_TIME = "shortdatetime";
 	public static final String LONG_DATE_TIME = "longdatetime";
@@ -135,7 +138,7 @@ public class Util
 		int iLen = sString.length();
 		if(iLen==0) return sString;
 
-		StringBuilder sbData = new StringBuilder(iLen);
+		/*StringBuilder sbData = new StringBuilder(iLen);
 		sbData.append(sString);
 		int iStart=0;
 
@@ -145,6 +148,15 @@ public class Util
 
 		if(iStart>iEnd) return "";
 		return sbData.substring(iStart, iEnd+1);
+		*/
+		int iStart=0;
+
+		while(iStart<iLen && isCharInList(sString.charAt(iStart), c) ) iStart++;
+		int iEnd=iLen-1;
+		while(iEnd>0 && isCharInList(sString.charAt(iEnd), c) ) iEnd--;
+
+		if(iStart>iEnd) return "";
+		return sString.substring(iStart, iEnd+1);
 	}
 
 
@@ -188,7 +200,7 @@ public class Util
 		// now try "23,089"
 		try
 		{     
-			NumberFormat nf = NumberFormat.getInstance();
+			NumberFormat nf = NUMBER_FORMAT.get();
 			Number n = nf.parse(sInput); 
 			double d = n.doubleValue();
 			long l = n.longValue();        
@@ -214,7 +226,7 @@ public class Util
 		// now try "23,089"
 		try
 		{     
-			NumberFormat nf = NumberFormat.getInstance();
+			NumberFormat nf = NUMBER_FORMAT.get();
 			nf.parse(sInput); 
 			//double d = n.doubleValue();
 
@@ -245,7 +257,7 @@ public class Util
 		// now try "23,089"
 		try
 		{     
-			NumberFormat nf = NumberFormat.getInstance();
+			NumberFormat nf = NUMBER_FORMAT.get();
 			Number n = nf.parse(sInput); 
 			double d = n.doubleValue();
 			long l = n.longValue();        
@@ -490,15 +502,15 @@ public class Util
 		if(sInput==null || sSeparator==null) return null;
 		ArrayList<String> vReturn = new ArrayList<String>();
 
-		int iPos = sInput.indexOf(sSeparator);
-		while(iPos>=0)
+		int iSepLen = sSeparator.length();
+		int iStart = 0;
+		int iPos;
+		while((iPos = sInput.indexOf(sSeparator, iStart)) >= 0)
 		{
-			String szToken = sInput.substring(0, iPos);
-			sInput = sInput.substring(iPos+sSeparator.length(), sInput.length());
-			vReturn.add(szToken);
-			iPos = sInput.indexOf(sSeparator);
+			vReturn.add(sInput.substring(iStart, iPos));
+			iStart = iPos + iSepLen;
 		}
-		if(sInput.length()!=0) vReturn.add(sInput);
+		if(iStart <= sInput.length()) vReturn.add(sInput.substring(iStart));
 
 		return vReturn;
 	}
@@ -551,15 +563,14 @@ public class Util
 		if(sInput==null) return null;
 		ArrayList<String> vReturn = new ArrayList<String>();
 
-		int iPos = sInput.indexOf(cChar);
-		while(iPos>=0)
+		int iStart = 0;
+		int iPos;
+		while((iPos = sInput.indexOf(cChar, iStart)) >= 0)
 		{
-			String szToken = sInput.substring(0, iPos);
-			sInput = sInput.substring(iPos+1, sInput.length());
-			vReturn.add(szToken);
-			iPos = sInput.indexOf(cChar);
+			vReturn.add(sInput.substring(iStart, iPos));
+			iStart = iPos + 1;
 		}
-		if(sInput.length()!=0) vReturn.add(sInput);
+		if(iStart <= sInput.length()) vReturn.add(sInput.substring(iStart));
 
 		return vReturn;
 	}
@@ -976,7 +987,7 @@ public class Util
 				{
 					int iSrcPos = i+k;
 					if(iSrcPos>=src.length) return -1;
-					if(src[iSrcPos]!=find[k]) bOK=false;
+					if(src[iSrcPos]!=find[k]) { bOK=false; break; }
 				}//for k
 				if(bOK) return i;
 			}
@@ -1004,7 +1015,7 @@ public class Util
 				{
 					int iSrcPos = i+k;
 					if(iSrcPos>=src.length) return -1;
-					if(src[iSrcPos]!=find[k]) bOK=false;
+					if(src[iSrcPos]!=find[k]) { bOK=false; break; }
 				}//for k
 				if(bOK) return i;
 			}
@@ -1169,12 +1180,10 @@ public class Util
 			ByteArrayInputStream bais = new ByteArrayInputStream(bufInput);
 			GZIPInputStream gzis =  new GZIPInputStream(bais);
 			byte bufTemp[] = new byte[65535];
-			while(gzis.available()>0)
-			{
-				int iRead = gzis.read(bufTemp);
-				if(iRead>0) baos.write(bufTemp, 0, iRead); //append to the buffer
-			}
-			gzis.close();           
+			int iRead;
+			while((iRead = gzis.read(bufTemp)) != -1)
+				baos.write(bufTemp, 0, iRead);
+			gzis.close();
 			bufReturn = baos.toByteArray();
 		}
 		catch(Exception ie) 
@@ -1306,19 +1315,15 @@ public class Util
 	public static byte[] readFile(File f, int iChunkSize)
 	{
 		if(iChunkSize<1) iChunkSize = 4096;
-		try 
+		try (FileInputStream fin = new FileInputStream(f))
 		{
-			FileInputStream fin = new FileInputStream(f);
 			ByteArrayOutputStream baos = new ByteArrayOutputStream(iChunkSize);
-			byte buf[] = new byte[iChunkSize]; //4k chunks
-			while(fin.available()>0)
-			{				
-				int iRead = fin.read(buf);
-				if(iRead>0) baos.write(buf, 0, iRead);
-			}
-			fin.close();
+			byte buf[] = new byte[iChunkSize];
+			int iRead;
+			while((iRead = fin.read(buf)) != -1)
+				baos.write(buf, 0, iRead);
 			return baos.toByteArray();
-		} 
+		}
 		catch (Exception e) {}
 		return null;
 	}
@@ -1581,9 +1586,10 @@ public class Util
 		try
 		{
 			if(obj instanceof ResultSet) ((ResultSet)obj).close();
-			if(obj instanceof Statement) ((Statement)obj).close();
-			if(obj instanceof PreparedStatement) ((PreparedStatement)obj).close();
-		}catch(Exception e){}
+			else //else if, small perf tweak
+				if(obj instanceof Statement) ((Statement)obj).close();
+			//if(obj instanceof PreparedStatement) ((PreparedStatement)obj).close(); //derrives from Statement, not required
+		}catch(Throwable t){}
 	}
 
 	/**
@@ -1642,8 +1648,8 @@ public class Util
 	public static byte[] readStreamToByteArray(InputStream is) throws IOException
 	{
 		if(is==null) return null;
-		ByteArrayOutputStream baos = new ByteArrayOutputStream(2048); // ~ 2k
-		byte[] buf = new byte[1024];		
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+		byte[] buf = new byte[8192];
 		try 
 		{
 			for (;;) 

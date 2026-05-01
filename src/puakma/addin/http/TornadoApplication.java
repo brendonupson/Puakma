@@ -523,13 +523,7 @@ public class TornadoApplication implements ErrorDetect
 				while (rs.next())
 				{
 					design.addParameter(rs.getString("ParamName"), rs.getString("ParamValue"));
-				}
-
-				//The binary data specified paths to other design elements to "merge" into this one element
-				if(design.getParameterValue("CompositeElement").equals("1"))
-				{
-					createCompositeDesignElement(design);
-				}
+				}				
 
 				//System.out.println(design.toString());
 				//if(bufSource!=null) System.out.println(String.valueOf(bufSource));
@@ -548,6 +542,13 @@ public class TornadoApplication implements ErrorDetect
 			Util.closeJDBC(stmt);
 			m_pSystem.releaseSystemConnection(cx);
 		}
+		
+		//The binary data specified paths to other design elements to "merge" into this one element
+		if(design!=null && design.getParameterValue("CompositeElement").equals("1"))
+		{
+			createCompositeDesignElement(design);
+		}
+		
 
 		final String LOGIN_PAGE = "$Login";
 		//ok, we're after the login page so try to get it from the jar if the default login page in /puakma.pma
