@@ -407,12 +407,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			m_sIfNoneMatch = Util.getMIMELine(m_environment_lines, "If-None-Match");
 
 			//if the client says close the connection, then close it.
-			String szCloseConnection = Util.getMIMELine(m_environment_lines, "Connection");
-			if(szCloseConnection!=null && szCloseConnection.equalsIgnoreCase("close")) 
+			String sCloseConnection = Util.getMIMELine(m_environment_lines, "Connection");
+			if(sCloseConnection!=null && sCloseConnection.equalsIgnoreCase("close")) 
 				m_bCloseConnection=true;
 			else
 			{
-				if(szCloseConnection==null && m_sHTTPVersion.equals("HTTP/1.0")) m_bCloseConnection=true;
+				if(sCloseConnection==null && m_sHTTPVersion.equals("HTTP/1.0")) m_bCloseConnection=true;
 			}
 
 			//if(m_http_server.m_bLogInbound) m_iInboundSize = HTTPServer.getInboundRequestSize(m_http_request_line, m_environment_lines);
@@ -2298,14 +2298,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 							//System.out.println("request length " + iRequestLength);
 							byte[] output = new byte[MAX_CHUNK];
-							while((len=fin.available()) > 0 && iWrote<lRequestLength)
+							int iRead;
+							while(iWrote<lRequestLength && (iRead=fin.read(output)) > 0)
 							{
-								//if(len>MAX_CHUNK) len = MAX_CHUNK;                              
-								//if((iWrote+len)>lRequestLength) len = lRequestLength-iWrote;
-								//byte[] output = new byte[len];                              
-								int iRead = fin.read(output);              
-								if(iRead>0) foutBS.write(output, 0, iRead);
-
+								foutBS.write(output, 0, iRead);
 								lTotalOut += iRead;
 								iWrote += iRead;
 								if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
@@ -2379,22 +2375,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				byte bufOutput[] = new byte[MAX_CHUNK];				
 				is.skip(lFirstByteInRange);
 
-				while(is.available() > 0)
+				int iRead;
+				while((iRead=is.read(bufOutput)) > 0)
 				{
-					int iRead = is.read(bufOutput);
-					if(iRead>0)
-					{
-						//System.out.println("lTotalOut="+lTotalOut+" iRead="+iRead+" lEndRange="+lEndRange);
-						//if((lTotalOut+iRead)>iContentLength) iRead = (int)(iContentLength-lTotalOut);
-						//if(iRead<=0) break;
-						m_os.write(bufOutput, 0, iRead);
-						m_http_server.updateBytesServed(iRead);   
-						lTotalOut += iRead;
-						if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
-					}
-					else
-						break;
-					//System.out.println("here4");
+					m_os.write(bufOutput, 0, iRead);
+					m_http_server.updateBytesServed(iRead);
+					lTotalOut += iRead;
+					if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
 				}
 				//System.out.println("Wrote: "+lTotalOut);
 				m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_BYTESOUTPERHOUR, lTotalOut);
@@ -2469,19 +2456,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private void sendStreamToFile(InputStream is, File fOriginal) throws IOException
 	{
 		final int MAX_CHUNK=200000;
-		int len=0;
-		int iTotalWrote=0;
+		//int iTotalWrote=0;
 		FileOutputStream fout = new FileOutputStream(fOriginal);
-		//System.out.println("skipping "+lSkip+" bytes");
-		//long lStart = System.currentTimeMillis();
-		while((len=is.available()) > 0)
+		byte output[] = new byte[MAX_CHUNK];
+		int iRead;
+		while((iRead=is.read(output)) > 0)
 		{
-			if(len > MAX_CHUNK) len = MAX_CHUNK;          
-			byte output[] = new byte[len];
-
-			int iRead = is.read(output);
 			fout.write(output, 0, iRead);
-			iTotalWrote+=iRead;
+			//iTotalWrote+=iRead;
 		}
 		fout.flush();
 		fout.close();

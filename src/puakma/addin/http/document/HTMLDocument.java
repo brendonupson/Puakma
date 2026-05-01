@@ -56,6 +56,7 @@ public class HTMLDocument extends Document implements Cloneable
 	private Vector<String> m_vExtraHeaders=null;  
 	private boolean m_bDataPosted = false;
 	private ArrayList m_arrParsedDocParts = null;
+	private HashMap<String, ArrayList<HTMLControl>> m_controlIndex = null;
 
 
 	public HTMLDocument() { }
@@ -120,8 +121,7 @@ public class HTMLDocument extends Document implements Cloneable
 		//pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "getDesignData()", pSession);
 		String sReturn="";
 		int i;
-		//int iHideLevel=0;
-		HashMap hmHides = new HashMap();
+		HashMap hmHides = null;
 
 		if(designObject!=null)
 		{
@@ -134,7 +134,7 @@ public class HTMLDocument extends Document implements Cloneable
 					Object o = arrDocParts.get(i);
 					if(o instanceof String)
 					{
-						if(hmHides.size()==0) sb.append((String)o);
+						if(hmHides==null || hmHides.size()==0) sb.append((String)o);
 					}
 					else //assume a field
 					{
@@ -143,18 +143,22 @@ public class HTMLDocument extends Document implements Cloneable
 						if(htmlItem.getType()==HTMLControl.ITEM_TYPE_HIDESTART)
 						{
 							//System.out.println(sItemName+":"+getItemValue(sItemName));
-							if(getItemBooleanValue(sItemName)) hmHides.put(sItemName, "");
+							if(getItemBooleanValue(sItemName))
+							{
+								if(hmHides==null) hmHides = new HashMap();
+								hmHides.put(sItemName, "");
+							}
 						}
 						if(htmlItem.getType()==HTMLControl.ITEM_TYPE_HIDEEND)
 						{
-							if(hmHides.containsKey(sItemName))
+							if(hmHides!=null && hmHides.containsKey(sItemName))
 							{
 								hmHides.remove(sItemName);
 							}
 						}
-						if(hmHides.size()==0) sb.append(htmlItem.getHTML(bReadMode));
+						if(hmHides==null || hmHides.size()==0) sb.append(htmlItem.getHTML(bReadMode));
 					}
-				}        
+				}
 				sReturn = sb.toString();
 			}
 			else
@@ -572,6 +576,28 @@ public class HTMLDocument extends Document implements Cloneable
 		return new HTMLDocumentItem(control);
 	}
 
+	private void buildControlIndex()
+	{
+		m_controlIndex = new HashMap<String, ArrayList<HTMLControl>>();
+		ArrayList arrDocParts = getParsedDocParts();
+		for(int i=0; i<arrDocParts.size(); i++)
+		{
+			Object o = arrDocParts.get(i);
+			if(o instanceof HTMLControl)
+			{
+				HTMLControl ctrl = (HTMLControl)o;
+				String sName = ctrl.getName().toLowerCase();
+				ArrayList<HTMLControl> list = m_controlIndex.get(sName);
+				if(list==null)
+				{
+					list = new ArrayList<HTMLControl>();
+					m_controlIndex.put(sName, list);
+				}
+				list.add(ctrl);
+			}
+		}
+	}
+
 	/**
 	 * Gets a handle to the first named page control.
 	 * @param sItemName
@@ -580,17 +606,10 @@ public class HTMLDocument extends Document implements Cloneable
 	public HTMLControl getHTMLControl(String sItemName)
 	{
 		if(designObject==null) return null;
-		ArrayList arrDocParts = getParsedDocParts();
-		for(int i=0; i<arrDocParts.size(); i++)
-		{
-			Object o = arrDocParts.get(i);
-			if(!(o instanceof String))
-			{
-				HTMLControl it = (HTMLControl)o;
-				if(it.getName().equalsIgnoreCase(sItemName)) return it;
-			}
-		}
-		return null;
+		if(m_controlIndex==null) buildControlIndex();
+		ArrayList<HTMLControl> list = m_controlIndex.get(sItemName.toLowerCase());
+		if(list==null || list.isEmpty()) return null;
+		return list.get(0);
 	}
 
 	public void setHTMLControl(String sItemName, HTMLControl ctrl)
@@ -625,27 +644,10 @@ public class HTMLDocument extends Document implements Cloneable
 	public HTMLControl[] getAllHTMLControls(String sItemName)
 	{
 		if(designObject==null) return null;
-		//FIXME ... changes here get lost :-/
-		//m_pParsedDocParts = designObject.getParsedDocumentParts(this, true);
-		ArrayList arrDocParts = getParsedDocParts();
-		ArrayList arr = new ArrayList();
-		for(int i=0; i<arrDocParts.size(); i++)
-		{
-			Object o = arrDocParts.get(i);
-			if(o instanceof HTMLControl)
-			{
-				HTMLControl it = (HTMLControl)o;
-				if(it.getName().equalsIgnoreCase(sItemName)) arr.add(it);
-			}
-		}
-		if(arr.size()==0) return null;
-
-		HTMLControl ctrls[] = new HTMLControl[arr.size()];
-		for(int i=0; i<arr.size(); i++)
-		{
-			ctrls[i] = (HTMLControl) arr.get(i);
-		}
-		return ctrls;
+		if(m_controlIndex==null) buildControlIndex();
+		ArrayList<HTMLControl> list = m_controlIndex.get(sItemName.toLowerCase());
+		if(list==null || list.isEmpty()) return null;
+		return list.toArray(new HTMLControl[0]);
 	}
 
 	/**
@@ -897,6 +899,7 @@ public class HTMLDocument extends Document implements Cloneable
 			HTMLDocument doc = (HTMLDocument)obj;
 			//removed the parsed parts so it can rejig its internals
 			doc.m_arrParsedDocParts = null;
+			doc.m_controlIndex = null;
 		}
 
 		return obj;
@@ -908,6 +911,7 @@ public class HTMLDocument extends Document implements Cloneable
 	public void removeParsedParts()
 	{
 		m_arrParsedDocParts = null;
+		m_controlIndex = null;
 	}
 
 	/**
@@ -1076,10 +1080,7 @@ public class HTMLDocument extends Document implements Cloneable
 		}
 		if(vReturn==null) return null;
 
-		Object obj[] = vReturn.toArray();
-		String sReturn[] = new String[obj.length];
-		for(int i=0; i<obj.length; i++) sReturn[i] = (String)obj[i];
-		return sReturn;
+		return vReturn.toArray(new String[0]);
 	}
 
 

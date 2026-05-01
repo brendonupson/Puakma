@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.TimeZone;
 import java.util.Vector;
+import java.util.regex.Pattern;
 
 import puakma.addin.http.action.HTTPSessionContext;
 import puakma.addin.http.util.HTMLTagTokenizer;
@@ -61,6 +62,10 @@ public class HTMLControl
 	private String MissingValueText=null;
 	private String[] m_sMultiTagOptions=null; //eg "style=\"background-color: #000;\"" to be used in an <option> tag
 	private String m_sRawTagHTML;
+	private ArrayList<String> m_parsedOtherOptions=null;
+
+	private static final Pattern ENTITY_ALPHA_PATTERN = Pattern.compile("(&)([a-zA-Z]{2,}+;)");
+	private static final Pattern ENTITY_NUMERIC_PATTERN = Pattern.compile("(&)(#[0-9]{2,}+;)");
 
 	public final static int ITEM_TYPE_UNKNOWN=-1;
 	public final static int ITEM_TYPE_VOID=0; //no output at all
@@ -186,6 +191,7 @@ public class HTMLControl
 	 */
 	private void processItem(String szType, ArrayList<String> al)
 	{
+		m_parsedOtherOptions = null;
 		String szSize;
 		Type = getTypeFromString(szType);
 		if(Type == ITEM_TYPE_LIST) //it's only the size param that's different!
@@ -320,6 +326,21 @@ public class HTMLControl
 		}
 	}
 
+	private ArrayList<String> getParsedOtherOptions()
+	{
+		if(m_parsedOtherOptions==null)
+		{
+			m_parsedOtherOptions = new ArrayList<String>();
+			if(OtherOptions!=null && OtherOptions.length()>0)
+			{
+				HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
+				while(st.hasMoreTokens())
+					m_parsedOtherOptions.add((String)st.nextElement());
+			}
+		}
+		return m_parsedOtherOptions;
+	}
+
 	/**
 	 * @deprecated @see getItemAttribute
 	 * @param sOptionName
@@ -346,16 +367,7 @@ public class HTMLControl
 		if(sOptionName.equalsIgnoreCase("firstchoice")) return FirstChoice;
 		if(sOptionName.equalsIgnoreCase(MISSINGVALUEOPTION)) return MissingValueText;
 
-
-		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList<String> arr = new ArrayList<String>();
-		while(st.hasMoreTokens())
-		{
-			String szItem = (String)st.nextElement();      
-			arr.add(szItem);
-		}
-
-		return getArrayValue(sOptionName, arr, false);
+		return getArrayValue(sOptionName, getParsedOtherOptions(), false);
 	}
 
 
@@ -417,26 +429,22 @@ public class HTMLControl
 		 * format="dd/MM/yy HH:mm"
 		 */
 		boolean bFound = false;
-		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList<String> arr = new ArrayList<String>();
-		while(st.hasMoreTokens())
+		ArrayList<String> arr = getParsedOtherOptions();
+		for(int i=0; i<arr.size(); i++)
 		{
-			String sItem = (String)st.nextElement();   
+			String sItem = arr.get(i);
 			int iPos = sItem.indexOf('=');
 			if(iPos>0)
 			{
 				String sName = sItem.substring(0, iPos);
 				if(sName.equalsIgnoreCase(sAttributeName))
 				{
-					sItem = sAttributeName + "=\"" + sValue + "\"";
+					arr.set(i, sAttributeName + "=\"" + sValue + "\"");
 					bFound = true;
 				}
-				//System.out.println(sItem);
 			}
-			arr.add(sItem);
 		}
 		if(!bFound) arr.add(sAttributeName + "=\"" + sValue + "\"");
-
 		OtherOptions = implodeArray(arr);
 	}
 
@@ -448,15 +456,12 @@ public class HTMLControl
 	 */
 	public void dropItemOption(String sOptionName)
 	{
-		HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-		ArrayList<String> arr = new ArrayList<String>();
-		while(st.hasMoreTokens())
+		ArrayList<String> arr = getParsedOtherOptions();
+		for(int i=arr.size()-1; i>=0; i--)
 		{
-			String sItem = (String)st.nextElement();
-			if(!sOptionName.equalsIgnoreCase(sItem)) arr.add(sItem);
+			if(sOptionName.equalsIgnoreCase(arr.get(i))) arr.remove(i);
 		}
-
-
+		OtherOptions = implodeArray(arr);
 	}
 
 
@@ -941,28 +946,10 @@ public class HTMLControl
 		//if(DefaultValue==null || DefaultValue.length()==0) return DefaultValue;
 		//now replace &nbsp; etc with &amp;nbsp;
 		//added 8/4/06
-		String sWorkValue = sValue.replaceAll("(&)([a-zA-Z]{2,}+;)", "&amp;$2");
-		sWorkValue = sWorkValue.replaceAll("(&)(#[0-9]{2,}+;)", "&amp;$2");
-
-		int iPos=sWorkValue.indexOf('<');
-		while(iPos>=0)
-		{
-			String sStart = sWorkValue.substring(0, iPos);
-			String sEnd = sWorkValue.substring(iPos+1);
-			sWorkValue = sStart + "&lt;" + sEnd;
-			iPos=sWorkValue.indexOf('<');
-		}
-		
-		iPos=sWorkValue.indexOf('>');
-		while(iPos>=0)
-		{
-			String sStart = sWorkValue.substring(0, iPos);
-			String sEnd = sWorkValue.substring(iPos+1);
-			sWorkValue = sStart + "&gt;" + sEnd;
-			iPos=sWorkValue.indexOf('>');
-		}
-
-		
+		String sWorkValue = ENTITY_ALPHA_PATTERN.matcher(sValue).replaceAll("&amp;$2");
+		sWorkValue = ENTITY_NUMERIC_PATTERN.matcher(sWorkValue).replaceAll("&amp;$2");
+		sWorkValue = sWorkValue.replace("<", "&lt;");
+		sWorkValue = sWorkValue.replace(">", "&gt;");
 		return sWorkValue;
 	}
 
@@ -1633,7 +1620,7 @@ public class HTMLControl
 		if(sIn.indexOf('\"')<0) return sIn;      
 		String sReturn = sIn;
 
-		sReturn = sReturn.replaceAll("\"", "&quot;");
+		sReturn = sReturn.replace("\"", "&quot;");
 		return sReturn;
 	}
 
