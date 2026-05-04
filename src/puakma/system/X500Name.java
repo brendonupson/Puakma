@@ -189,7 +189,7 @@ public class X500Name
 
 	/** Main for testing purposes
 	 */
-	/*  public static void main(String args[])
+  /*public static void main(String args[])
   {
     X500Name cn = new X500Name("John Smith");
     X500Name full = new X500Name("John Smith/Marketing/SYDNEY/ACME");
@@ -205,8 +205,8 @@ public class X500Name
 
     boolean b = full.equals(canon, true);
 
-  }
-	 */
+  }*/
+	 
 
 	public boolean equals(String sUserName)
 	{
