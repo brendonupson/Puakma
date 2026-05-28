@@ -29,11 +29,13 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.Vector;
 
 import puakma.addin.http.HTTPRequestManager;
+import puakma.addin.http.TornadoApplication;
 import puakma.addin.http.TornadoServer;
 import puakma.addin.http.TornadoServerInstance;
 import puakma.addin.http.action.HTTPSessionContext;
@@ -977,6 +979,26 @@ public class HTMLDocument extends Document implements Cloneable
 	 */
 	public String makeKeywordChoices(String sKey, boolean bSortByValue)
 	{
+		TornadoServerInstance tsi = TornadoServer.getInstance(pSystem);	
+		TornadoApplication ta = tsi==null ? null : tsi.getTornadoApplication(rPath.Group, rPath.Application); 
+		if(ta==null) return "";
+		
+		List<String> keywordValues = ta.getAllKeywordValues(sKey, bSortByValue);
+		
+		if(keywordValues==null) return "";
+		StringBuilder sbReturn = new StringBuilder(keywordValues.size()*100);
+		for(int i=0; i<keywordValues.size(); i++)
+		{
+			if(sbReturn.length()>0) sbReturn.append(',');
+			sbReturn.append((String)keywordValues.get(i));
+		}
+		
+		return sbReturn.toString();
+	}
+	
+	
+	/*public String makeKeywordChoices(String sKey, boolean bSortByValue)
+	{
 		ArrayList<String> vReturn=null;
 		Connection cxSys=null;
 		Statement stmt = null;
@@ -1028,7 +1050,7 @@ public class HTMLDocument extends Document implements Cloneable
 
 		if(sbReturn.length()==0) return "";
 		return sbReturn.toString();
-	}
+	}*/
 
 	/**
 	 * Makes a choices string suitable for a combo or listbox.
@@ -1037,6 +1059,19 @@ public class HTMLDocument extends Document implements Cloneable
 	 * @return
 	 */
 	public String[] makeKeywordChoicesArray(String sKey, boolean bSortByValue)
+	{
+		TornadoServerInstance tsi = TornadoServer.getInstance(pSystem);	
+		TornadoApplication ta = tsi==null ? null : tsi.getTornadoApplication(rPath.Group, rPath.Application); 
+		if(ta==null) return new String[0];
+		
+		List<String> keywordValues = ta.getAllKeywordValues(sKey, bSortByValue);
+		
+		if(keywordValues==null || keywordValues.size()==0) return new String[0];
+		
+		return keywordValues.toArray(new String[0]);
+	}
+	
+	/*public String[] makeKeywordChoicesArray(String sKey, boolean bSortByValue)
 	{
 		ArrayList<String> vReturn=null;
 		Connection cxSys=null; 
@@ -1081,7 +1116,7 @@ public class HTMLDocument extends Document implements Cloneable
 		if(vReturn==null) return null;
 
 		return vReturn.toArray(new String[0]);
-	}
+	}*/
 
 
 	public Vector<String> getExtraHeaders() 

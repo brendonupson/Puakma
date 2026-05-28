@@ -13,7 +13,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Vector;
 
 import puakma.addin.http.action.ActionReturn;
@@ -76,6 +78,7 @@ public class TornadoApplication implements ErrorDetect
 	private int m_iDataConnGetCount=0;
 	private int m_iDataConnReleaseCount=0;
 	private Hashtable<String, String> m_htStringTable = new Hashtable<String, String>(500);
+	private Hashtable<String, List<String>> m_htKeywordCache = new Hashtable<String, List<String>>(20);
 	private Locale m_applicationLocale = null;
 	private SharedActionClassLoader m_sacl = null;
 
@@ -1632,6 +1635,77 @@ public class TornadoApplication implements ErrorDetect
 		}
 
 		return false;
+	}
+	
+	public String getKeywordValue(String sKey)
+	{		
+		List<String> keywordValues = getAllKeywordValues(sKey, false);
+		if(keywordValues==null || keywordValues.size()==0) return null;
+		return keywordValues.get(0);		
+	}
+	
+	public List<String> getAllKeywordValues(String sKey, boolean bSortByValue)
+	{
+		//FIXME cache
+		String sKeywordCacheKey = (sKey + '-' + bSortByValue).toLowerCase();
+		if(m_htKeywordCache.containsKey(sKeywordCacheKey)) return (List<String>)m_htKeywordCache.get(sKeywordCacheKey);
+		
+		ArrayList<String> vReturn=null;
+		Connection cxSys=null; 
+		PreparedStatement stmt = null;
+		ResultSet rs = null;
+		RequestPath rPath = this.getRequestPath();
+		String sAppName = rPath.Application;
+		String sAppGroup = rPath.Group;
+		String sOrderClause=" ORDER BY KeywordOrder,Data";
+
+		//m_SysCtx.doDebug(pmaLog.DEBUGLEVEL_FULL, "getAllKeywordValues()", m_SessCtx);
+		if(sKey==null || sKey.length()==0) return null;
+		if(sAppName==null || sAppName.length()==0) return null;
+		boolean bHasGroup = true;
+		if(sAppGroup==null || sAppGroup.length()==0) bHasGroup = false;
+
+		if(bSortByValue) sOrderClause = " ORDER BY Data";
+		String sQuery = "SELECT Data FROM APPLICATION,KEYWORD,KEYWORDDATA WHERE UPPER(APPLICATION.AppName)=? AND (APPLICATION.AppGroup='' OR APPLICATION.AppGroup IS NULL) AND APPLICATION.AppID=KEYWORD.AppID AND KEYWORD.KeywordID=KEYWORDDATA.KeywordID AND UPPER(KEYWORD.Name)=?" + sOrderClause;
+		if(bHasGroup)
+		{
+			sQuery = "SELECT Data FROM APPLICATION,KEYWORD,KEYWORDDATA WHERE UPPER(APPLICATION.AppName)=? AND (UPPER(APPLICATION.AppGroup)=? OR APPLICATION.AppGroup='*') AND APPLICATION.AppID=KEYWORD.AppID AND KEYWORD.KeywordID=KEYWORDDATA.KeywordID AND UPPER(KEYWORD.Name)=?" + sOrderClause;
+		}
+
+
+		try
+		{
+			//System.out.println("[" + szQuery + "]");
+			cxSys = m_pSystem.getSystemConnection();
+			stmt = cxSys.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			stmt.setString(1, sAppName.toUpperCase());
+			if(bHasGroup)   
+			{
+				stmt.setString(2, sAppGroup.toUpperCase());
+				stmt.setString(3, sKey.toUpperCase());
+			}
+			else
+				stmt.setString(2, sKey.toUpperCase());
+
+			rs = stmt.executeQuery();
+			while(rs.next())
+			{
+				if(vReturn==null) vReturn = new ArrayList<String>();
+				vReturn.add(rs.getString("Data"));
+			}			
+		}
+		catch(Exception de)
+		{
+			m_pSystem.doError("HTTPRequest.getKeywordError", new String[]{sKey, de.toString()}, this);
+		}
+		finally{
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
+			m_pSystem.releaseSystemConnection(cxSys);
+		}
+		
+		if(vReturn!=null && !m_htKeywordCache.containsKey(sKeywordCacheKey)) m_htKeywordCache.put(sKeywordCacheKey, vReturn);
+		return vReturn;
 	}
 
 }//class

@@ -755,6 +755,14 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public String getKeywordValue(String sKey)
 	{
+		TornadoServerInstance tsi = TornadoServer.getInstance(m_SysCtx);	
+		TornadoApplication ta = tsi==null ? null : tsi.getTornadoApplication(m_rPath.Group, m_rPath.Application); 
+		return ta==null ? null : ta.getKeywordValue(sKey);
+	}
+	
+	/*public String getKeywordValue(String sKey)
+	{
+		
 		Connection cxSys=null;
 		PreparedStatement stmt = null;
 		ResultSet rs = null;
@@ -802,7 +810,7 @@ public class HTTPSessionContext implements ErrorDetect
 		}
 
 		return sReturn;
-	}
+	}*/
 
 	/**
 	 * Gets all keywords matching sKey (case insensitive). 
@@ -811,6 +819,12 @@ public class HTTPSessionContext implements ErrorDetect
 	 * @return null if no match
 	 */
 	public Vector<String> getAllKeywordValues(String sKey, boolean bSortByValue)
+	{
+		TornadoServerInstance tsi = TornadoServer.getInstance(m_SysCtx);	
+		TornadoApplication ta = tsi==null ? null : tsi.getTornadoApplication(m_rPath.Group, m_rPath.Application); 
+		return ta==null ? null : new Vector<String>(ta.getAllKeywordValues(sKey, bSortByValue));
+	}
+	/*public Vector<String> getAllKeywordValues(String sKey, boolean bSortByValue)
 	{
 		Vector<String> vReturn=null;
 		Connection cxSys=null; 
@@ -864,7 +878,7 @@ public class HTTPSessionContext implements ErrorDetect
 			m_SysCtx.releaseSystemConnection(cxSys);
 		}
 		return vReturn;
-	}
+	}*/
 
 	/**
 	 * Stores an object in memory for access by all http users/threads
