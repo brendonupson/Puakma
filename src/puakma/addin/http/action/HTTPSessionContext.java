@@ -33,6 +33,7 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.Vector;
@@ -822,7 +823,9 @@ public class HTTPSessionContext implements ErrorDetect
 	{
 		TornadoServerInstance tsi = TornadoServer.getInstance(m_SysCtx);	
 		TornadoApplication ta = tsi==null ? null : tsi.getTornadoApplication(m_rPath.Group, m_rPath.Application); 
-		return ta==null ? null : new Vector<String>(ta.getAllKeywordValues(sKey, bSortByValue));
+		if(ta==null) return null;
+		List<String> values = ta.getAllKeywordValues(sKey, bSortByValue);
+		return values==null ? new Vector<String>() : new Vector<String>(values);
 	}
 	/*public Vector<String> getAllKeywordValues(String sKey, boolean bSortByValue)
 	{
