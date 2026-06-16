@@ -61,8 +61,8 @@ public class TornadoServerInstance
 
 	public synchronized TornadoApplication getTornadoApplication(long lAppID)
 	{
-		RequestPath rp = getApplicationPath(lAppID);
-		return getTornadoApplication(rp.Group, rp.Application);
+		RequestPath rp = getApplicationPath(lAppID);		
+		return rp==null ? null : getTornadoApplication(rp.Group, rp.Application);
 	}
 
 	public RequestPath getApplicationPath(long lAppID)

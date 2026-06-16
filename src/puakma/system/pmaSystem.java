@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.0.52";
-	private final int PUAKMA_BUILD=1118;
-	private final String PUAKMA_BUILD_DATE="8 Jun 2026"; 
+	private final String PUAKMA_VERSION="6.0.53";
+	private final int PUAKMA_BUILD=1119;
+	private final String PUAKMA_BUILD_DATE="16 Jun 2026"; 
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
