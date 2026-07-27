@@ -68,6 +68,7 @@ public class Document implements ErrorDetect,Cloneable
 	public static final String APPPARAM_DEFAULTOPEN="defaultopen"; //what URL to open if 'GET /xxx.pma' only is requested
 	public static final String APPPARAM_DEFAULTCHARSET="defaultcharset"; //default characterset for this application. i18n etc
 	public static final String APPPARAM_DISABLEAPP="disableapp"; //'1' if the application is disabled
+	public static final String APPPARAM_DISABLESCHEDULEDACTIONS="disablescheduledactions"; //'1' if scheduled actions are disabled
 	public static final String APPPARAM_FORCESECURECONNECTION = "forcesecureconn";
 
 	public static final String PAGE_LOGIN_ITEM="$LoginPage";

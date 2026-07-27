@@ -142,7 +142,7 @@ public class AgendaAction extends Thread implements ErrorDetect
 			{
 				Object object = runclass.newInstance();
 				m_act = (ActionRunnerInterface)object;
-				
+
 				m_act.init(pSession, doc, m_rPath.Group, m_rPath.Application);
 				Thread.currentThread().setContextClassLoader(aLoader);
 				m_act.execute();
@@ -181,6 +181,21 @@ public class AgendaAction extends Thread implements ErrorDetect
 	public void requestQuit()
 	{
 		if(m_act!=null) m_act.requestQuit();
+	}
+
+	/**
+	 * Determines if the path passed matches the path for this scheduled action. 
+	 * eg if "/grp/app.pma/Action?Param&q=1&q=2" is passed, it will match on "/grp/app.pma/action"
+	 * @param sPath
+	 * @return
+	 */
+	public boolean matchesPath(String sPath)
+	{	
+		if(sPath==null) return false;
+
+		String sLowPath = getPath().toLowerCase();
+		if(sPath.toLowerCase().startsWith(sLowPath)) return true;
+		return false;
 	}
 
 	/**

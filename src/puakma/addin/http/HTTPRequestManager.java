@@ -518,17 +518,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				bRequestProcessed=true;
 			}
 
-			/*if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("POST"))			
-			{
-				m_bDataPosted = true;
-				doPost(m_sInboundPath);
-				bRequestProcessed=true;
-			}*/
-
+			
 			//treat as post, CardDav etc extensively use OPTIONS
 			//allow other types eg PROPFIND, SEARCH, PUT
 			String sAllowMethods[] = m_http_server.getAllowedHTTPMethods();
-			if(!bRequestProcessed && isInList(m_sInboundMethod, sAllowMethods)) //m_sInboundMethod.equalsIgnoreCase("OPTIONS")) 
+			if(!bRequestProcessed && isInList(m_sInboundMethod, sAllowMethods)) 
 			{					
 				m_bDataPosted = true;
 				doPost(m_sInboundPath);
@@ -919,22 +913,22 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doPost()", this);
 		boolean bForceClientPull=false;
 		HTMLDocument docIn=null;
-		String szContentType =  Util.getMIMELine(m_environment_lines, "Content-Type");
-		if(szContentType==null) szContentType = "multipart/form-data"; //field1=5&field2=7 etc
-		String szBoundary = Util.getMessageBoundary(szContentType);
-		szContentType = getContentType(szContentType);
-		String szContentLength = Util.getMIMELine(m_environment_lines, "Content-Length");
+		String sContentType =  Util.getMIMELine(m_environment_lines, "Content-Type");
+		if(sContentType==null) sContentType = "multipart/form-data"; //field1=5&field2=7 etc
+		String sBoundary = Util.getMessageBoundary(sContentType);
+		sContentType = getContentType(sContentType);
+		String sContentLength = Util.getMIMELine(m_environment_lines, "Content-Length");
 		long lLength = 0;
 
 		try{
-			lLength = Integer.parseInt(puakma.util.Util.trimSpaces(szContentLength));
+			lLength = Integer.parseInt(puakma.util.Util.trimSpaces(sContentLength));
 		}catch(Exception nfe){lLength=-1;}
-		if(lLength<0) 
+		//DELETE etc may not have a length
+		/*if(lLength<0) 
 		{
-			//dumpHeaders(m_environment_lines);
 			sendHTTPResponse(RET_LENGTHREQUIRED, "Content length required", null, HTTP_VERSION, null, null);
 			return;
-		}
+		}*/
 
 		//check if there is an max POST size and if so enforce it
 		long lMaxUpload = m_http_server.getMaxUploadBytes();
@@ -974,10 +968,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				|| m_bIsWidgetRequest || sLowAction.length()==0)
 		{
 			String sCharSet = getInboundCharset(rPath);
-			if(szContentType.equals(Document.CONTENT_MULTI))
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, szBoundary, lLength, sCharSet);
+			if(sContentType.equals(Document.CONTENT_MULTI))
+				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, sContentType, sBoundary, lLength, sCharSet);
 			else
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, szContentType, lLength, sCharSet);
+				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, sContentType, lLength, sCharSet);
 
 			//m_pSystem.doDebug(0, "doPost() C " + document_path +" " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 			if(!docIn.isDocumentCreatedOK())

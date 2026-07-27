@@ -31,6 +31,7 @@ import java.util.Vector;
 import puakma.addin.AddInStatistic;
 import puakma.addin.pmaAddIn;
 import puakma.addin.pmaAddInStatusLine;
+import puakma.addin.http.TornadoApplication;
 import puakma.addin.http.TornadoServer;
 import puakma.addin.http.TornadoServerInstance;
 import puakma.addin.http.document.DesignElement;
@@ -180,13 +181,15 @@ public class AGENDA extends pmaAddIn
 			rs = stmt.executeQuery("SELECT * FROM APPLICATION,DESIGNBUCKET WHERE APPLICATION.AppID=DESIGNBUCKET.AppID AND DESIGNBUCKET.DesignType=" + DesignElement.DESIGN_TYPE_SCHEDULEDACTION);
 			while(rs.next())
 			{
+				long lAppID = rs.getLong("AppID");
 				int iDesignID = rs.getInt("DesignBucketID");
 				String sAppGroup = rs.getString("AppGroup");
 				if(sAppGroup==null) sAppGroup = "";
 				String sAppName = rs.getString("AppName");
 				String sDesignName = rs.getString("Name");
 				String sOptions = rs.getString("Options");
-				boolean bDisabled = tsi.isApplicationDisabled(sAppGroup, sAppName); //HTTPServer. isAppDisabled(m_pSystem, sAppName, sAppGroup);
+				TornadoApplication ta = tsi.getTornadoApplication(lAppID);
+				boolean bDisabled = ta.isDisabled() || ta.isScheduledActionsDisabled();
 
 				if(!bDisabled && sOptions!=null && sOptions.toLowerCase().indexOf("schedule=n")<0)
 				{
@@ -279,6 +282,7 @@ public class AGENDA extends pmaAddIn
 					"->dbpool status\r\n" +
 					"->refresh\r\n" +
 					"->run /group/app.pma/action\r\n" +
+					"->stop /group/app.pma/action\r\n" +
 					"->stats [statistickey]\r\n" +
 					"->waitlist status\r\n" +
 					"->waitlist clear\r\n";
@@ -381,6 +385,16 @@ public class AGENDA extends pmaAddIn
 			}
 		}
 
+		if(sCommand.toLowerCase().startsWith("stop "))
+		{
+			int iPos = sCommand.indexOf(' ');
+			if(iPos>0)
+			{
+				String szPath = sCommand.substring(iPos+1, sCommand.length());
+				forceStop(szPath);
+			}
+		}
+
 		return sReturn;
 	}
 
@@ -441,6 +455,19 @@ public class AGENDA extends pmaAddIn
 				aItem.setNextRunTime();
 			}
 		}
+	}
+
+	private void forceStop(String sPath)
+	{		
+		for(int i=0; i<m_vRunningActions.size(); i++)
+		{
+			AgendaAction aAction = (AgendaAction)m_vRunningActions.elementAt(i);
+			if(aAction!=null && aAction.matchesPath(sPath))
+			{
+				aAction.requestQuit();
+				return;
+			}
+		}				
 	}
 
 

@@ -267,6 +267,18 @@ public class Util
 
 		return 0;
 	}
+	
+	public static boolean toBoolean(String sValue) 
+	{
+		if(sValue!=null && sValue.length()>0)
+		{
+			if(Util.toInteger(sValue)!=0) return true; //nonzero
+			if(sValue.equalsIgnoreCase("true")) return true;
+			if(sValue.equalsIgnoreCase("yes")) return true;
+		}
+
+		return false;
+	}
 
 	/**
 	 * Minifies a block of JavaScript code. Assume charset is utf-8.

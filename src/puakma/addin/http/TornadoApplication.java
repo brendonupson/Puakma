@@ -196,7 +196,7 @@ public class TornadoApplication implements ErrorDetect
 	 * Determines is an application has been disabled. This means no web access and no scheduled agents or widgets
 	 * get loaded
 	 */
-	public boolean isApplicationDisabled()
+	/*public boolean isApplicationDisabled()
 	{
 		long lAppID = getApplicationID();
 		int iDisabled = -1;
@@ -226,7 +226,7 @@ public class TornadoApplication implements ErrorDetect
 		if(iDisabled==1) return true;
 
 		return false;
-	}
+	}*/
 
 	/**
 	 * Determines is an application has been disabled. This means no web access and no scheduled agents or widgets
@@ -981,7 +981,7 @@ public class TornadoApplication implements ErrorDetect
 		}
 
 		pSession.setLastTransactionTime();
-		if(isApplicationDisabled())
+		if(isDisabled())
 		{
 			//sendPuakmaError(RET_FORBIDDEN, docErr);
 			return new TornadoApplicationReply(403, "Application is disabled", null);
@@ -1707,5 +1707,17 @@ public class TornadoApplication implements ErrorDetect
 		if(vReturn!=null && !m_htKeywordCache.containsKey(sKeywordCacheKey)) m_htKeywordCache.put(sKeywordCacheKey, vReturn);
 		return vReturn;
 	}
+
+	public boolean isDisabled() 
+	{
+		return Util.toBoolean(getApplicationParameter(Document.APPPARAM_DISABLEAPP));
+	}
+	
+	public boolean isScheduledActionsDisabled() 
+	{
+		return Util.toBoolean(getApplicationParameter(Document.APPPARAM_DISABLESCHEDULEDACTIONS));
+	}
+
+	
 
 }//class

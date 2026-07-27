@@ -283,7 +283,7 @@ public class TornadoServerInstance
 	{
 		TornadoApplication ta = getTornadoApplication(sAppGroup, sAppName);
 		if(ta==null) return true;
-		return ta.isApplicationDisabled();
+		return ta.isDisabled();
 	}
 
 	public long getApplicationID(String sAppGroup, String sAppName) 
