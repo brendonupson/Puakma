@@ -363,8 +363,8 @@ public class DesignElement implements Cloneable, CacheableItem
 	 * @param bAlwaysReturnAValidList
 	 * @return
 	 */
-	public ArrayList getParsedDocumentParts(HTMLDocument doc, boolean bAlwaysReturnAValidList) 
-	{		
+	public synchronized ArrayList getParsedDocumentParts(HTMLDocument doc, boolean bAlwaysReturnAValidList)
+	{
 		if(bAlwaysReturnAValidList && m_ParsedDocumentParts==null) return new ArrayList();
 
 		if(m_ParsedDocumentParts==null) return null;
@@ -385,7 +385,7 @@ public class DesignElement implements Cloneable, CacheableItem
 		return arr;
 	}
 
-	public void addParsedDocumentPart(Object obj) 
+	public synchronized void addParsedDocumentPart(Object obj)
 	{
 		if(m_ParsedDocumentParts==null) m_ParsedDocumentParts = new ArrayList(50);
 		m_ParsedDocumentParts.add(obj);
@@ -394,12 +394,12 @@ public class DesignElement implements Cloneable, CacheableItem
 	/**
 	 * required prior to the call to a computed page so we don't get the old page data
 	 */
-	public void removeParsedDocumentParts() 
+	public synchronized void removeParsedDocumentParts()
 	{
 		m_ParsedDocumentParts = null;
 	}
 
-	public boolean hasParsedDocumentParts() 
+	public synchronized boolean hasParsedDocumentParts()
 	{
 		return m_ParsedDocumentParts!=null;
 	}

@@ -970,20 +970,27 @@ public class HTMLControl
 			{
 				//System.out.println("--- getComputedPageHTML ----");
 				/*HTMLDocument docTemp = (HTMLDocument)pDocument.clone();
-              docTemp.setContent((byte[])null);                          
+              docTemp.setContent((byte[])null);
               docTemp.designObject = de;
               docTemp.prepare(null);
               docTemp.renderDocument(bReadMode, false);
 				 */
 
-				de.removeParsedDocumentParts();
+				//de is the shared, cached design element for the target page - every other
+				//concurrent/future request for that page holds the same reference. Forcing a
+				//re-parse (removeParsedDocumentParts) and reusing it directly here used to blow
+				//away and rebuild that shared cache entry on every single render of this control,
+				//and could re-wrap already-merged parent-page content on top of itself. Work on a
+				//private clone instead so the shared cache entry is never touched.
+				DesignElement deWorkingCopy = (DesignElement)de.clone();
+				deWorkingCopy.removeParsedDocumentParts();
 
 				HTMLDocument docTemp = new HTMLDocument(pSession);
 				docTemp.rPath = pDocument.rPath;
 				pDocument.copyAllItems(docTemp);
-				docTemp.setContent((byte[])null);                          
-				docTemp.designObject = de;
-										
+				docTemp.setContent((byte[])null);
+				docTemp.designObject = deWorkingCopy;
+
 				docTemp.prepare();
 				pDocument.copyControls(docTemp, true);				
 				docTemp.renderDocument(bReadMode, false);

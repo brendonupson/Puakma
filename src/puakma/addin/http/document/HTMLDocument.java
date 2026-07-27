@@ -202,40 +202,49 @@ public class HTMLDocument extends Document implements Cloneable
 
 		//long lStart = System.currentTimeMillis();
 		//determine if a parent exists
+		//designObject is shared (cached) across all concurrent requests for this page, so the
+		//one-time merge/parse below must be atomic per design element or concurrent first
+		//requests for the same page can race and corrupt the shared parsed-parts list.
 		if(designObject!=null && !designObject.hasParsedDocumentParts())
 		{
-			String sParent = designObject.getParameterValue("ParentPage");
-			if(sParent!=null && sParent.length()>0) //this belongs to a parent page
+			synchronized(designObject)
 			{
-				//get the parent raw data
-				String sParentData = "";
-				TornadoServerInstance tsi = TornadoServer.getInstance(m_sess.getSystemContext());
-				DesignElement des = tsi.getDesignElement(rPath.Group, rPath.Application, Util.trimSpaces(sParent), DesignElement.DESIGN_TYPE_PAGE);
-				if(des!=null)
-					sParentData = Util.stringFromUTF8(des.getContent()); //new String(des.getContent());
-				//get the child raw data
-				String sChildData = Util.stringFromUTF8(designObject.getContent()); //new String(designObject.getContent());
-				String sTag = "<p@childpage @p>";
-				int iPos = sParentData.toLowerCase().indexOf(sTag);
-				if(iPos>=0)
+				if(!designObject.hasParsedDocumentParts())
 				{
-					String sFirst = sParentData.substring(0, iPos);
-					String sLastPart = sParentData.substring(iPos+sTag.length());
-					sParentData = sFirst + sChildData + sLastPart;
+					String sParent = designObject.getParameterValue("ParentPage");
+					if(sParent!=null && sParent.length()>0) //this belongs to a parent page
+					{
+						//get the parent raw data
+						String sParentData = "";
+						TornadoServerInstance tsi = TornadoServer.getInstance(m_sess.getSystemContext());
+						DesignElement des = tsi.getDesignElement(rPath.Group, rPath.Application, Util.trimSpaces(sParent), DesignElement.DESIGN_TYPE_PAGE);
+						if(des!=null)
+							sParentData = Util.stringFromUTF8(des.getContent()); //new String(des.getContent());
+						//get the child raw data
+						String sChildData = Util.stringFromUTF8(designObject.getContent()); //new String(designObject.getContent());
+						String sTag = "<p@childpage @p>";
+						int iPos = sParentData.toLowerCase().indexOf(sTag);
+						if(iPos>=0)
+						{
+							String sFirst = sParentData.substring(0, iPos);
+							String sLastPart = sParentData.substring(iPos+sTag.length());
+							sParentData = sFirst + sChildData + sLastPart;
+						}
+						//insert the child raw content into the parent
+
+						/*DesignElement d2=null;
+						try{ d2 = (DesignElement)designObject.clone(); }catch(Exception e){}
+						if(d2!=null)
+						{
+							d2.setDesignData(Util.utf8FromString(sParentData));
+							this.designObject = d2;
+						}*/
+						//avoid a clone as the cached docparts will not be set properly
+						this.designObject.setDesignData(Util.utf8FromString(sParentData));
+
+					}//if parentpage
 				}
-				//insert the child raw content into the parent
-
-				/*DesignElement d2=null;              
-				try{ d2 = (DesignElement)designObject.clone(); }catch(Exception e){}
-				if(d2!=null)
-				{
-					d2.setDesignData(Util.utf8FromString(sParentData));
-					this.designObject = d2;                  
-				}*/
-				//avoid a clone as the cached docparts will not be set properly
-				this.designObject.setDesignData(Util.utf8FromString(sParentData));
-
-			}//if parentpage
+			}//synchronized
 		}
 		preparePage();
 		//long lDiffMS = System.currentTimeMillis()-lStart;
@@ -258,80 +267,87 @@ public class HTMLDocument extends Document implements Cloneable
 
 
 			if(designObject.getContentType().toLowerCase().startsWith("text/"))
-			{				
-				if(designObject.hasParsedDocumentParts())
-				{			
-					ArrayList arrDocParts = getParsedDocParts();
-					//System.out.println("CACHED " + this.designObject);
-					for(int i=0; i<arrDocParts.size(); i++)
-					{
-						Object obj = arrDocParts.get(i);
-						if(obj instanceof HTMLControl)
-						{
-							HTMLControl dElement = (HTMLControl) obj;
-							createDocumentItem(dElement);
-						}
-					}					
-				}
-				else
+			{
+				//designObject is shared (cached) across all concurrent requests for this page.
+				//Building the parsed-parts list mutates designObject directly, so the whole
+				//check-then-build sequence must be atomic per design element, otherwise two
+				//threads racing to be first to parse the same page can corrupt the shared list.
+				synchronized(designObject)
 				{
-					byte[] bufContent = designObject.getContent();
-					int iLen = 0;
-					if(bufContent!=null && bufContent.length>0) iLen = bufContent.length;
-					StringBuilder sbHTML=new StringBuilder(iLen);
-					String sField="";
-
-					String sBuffer = "";
-					if(bufContent!=null) sBuffer = insertSubPages(Util.stringFromUTF8(bufContent));
-
-					int iPos;
-					sbHTML.append(sBuffer); //in case not special tags
-					iPos = sBuffer.indexOf(HTMLControl.FIELD_START);
-					while(iPos>=0)
+					if(designObject.hasParsedDocumentParts())
 					{
-						sbHTML.delete(0, sbHTML.length());
-						sbHTML.append(sBuffer.substring(0, iPos));
-						designObject.addParsedDocumentPart(sbHTML.toString());
-						addParsedDocPart(sbHTML.toString());
-						sBuffer = sBuffer.substring(iPos, sBuffer.length());
-						sEndMarker = HTMLControl.FIELD_END;
-						iPos = sBuffer.indexOf(sEndMarker);
-						if(iPos<0)
+						ArrayList arrDocParts = getParsedDocParts();
+						//System.out.println("CACHED " + this.designObject);
+						for(int i=0; i<arrDocParts.size(); i++)
 						{
-							//bugfix: If there was a start tag <P@ and no end tag @P> this will
-							//fall into an infinite loop and run out of memory!!!
-							sEndMarker = ">";
+							Object obj = arrDocParts.get(i);
+							if(obj instanceof HTMLControl)
+							{
+								HTMLControl dElement = (HTMLControl) obj;
+								createDocumentItem(dElement);
+							}
+						}
+					}
+					else
+					{
+						byte[] bufContent = designObject.getContent();
+						int iLen = 0;
+						if(bufContent!=null && bufContent.length>0) iLen = bufContent.length;
+						StringBuilder sbHTML=new StringBuilder(iLen);
+						String sField="";
+
+						String sBuffer = "";
+						if(bufContent!=null) sBuffer = insertSubPages(Util.stringFromUTF8(bufContent));
+
+						int iPos;
+						sbHTML.append(sBuffer); //in case not special tags
+						iPos = sBuffer.indexOf(HTMLControl.FIELD_START);
+						while(iPos>=0)
+						{
+							sbHTML.delete(0, sbHTML.length());
+							sbHTML.append(sBuffer.substring(0, iPos));
+							designObject.addParsedDocumentPart(sbHTML.toString());
+							addParsedDocPart(sbHTML.toString());
+							sBuffer = sBuffer.substring(iPos, sBuffer.length());
+							sEndMarker = HTMLControl.FIELD_END;
 							iPos = sBuffer.indexOf(sEndMarker);
 							if(iPos<0)
 							{
-								//still can't find it, use the remaining string
-								sEndMarker = "";
-								iPos = sBuffer.length();
+								//bugfix: If there was a start tag <P@ and no end tag @P> this will
+								//fall into an infinite loop and run out of memory!!!
+								sEndMarker = ">";
+								iPos = sBuffer.indexOf(sEndMarker);
+								if(iPos<0)
+								{
+									//still can't find it, use the remaining string
+									sEndMarker = "";
+									iPos = sBuffer.length();
+								}
 							}
-						}
-						if(iPos>0)//we found an end tag
-						{
-							iPos += sEndMarker.length(); //skip past the tag
-							sField = sBuffer.substring(0, iPos);
-							sBuffer = sBuffer.substring(iPos, sBuffer.length());
-							HTMLControl dElement = new HTMLControl(this, sField);
-							designObject.addParsedDocumentPart(dElement);							
-							createDocumentItem(dElement);
-							addParsedDocPart(dElement);
-						}
-						iPos = sBuffer.indexOf(HTMLControl.FIELD_START);
-						if(iPos<0) //saves a double buffer copy
-						{
-							sbHTML.delete(0, sbHTML.length());
-							sbHTML.append(sBuffer);
-						}
-					}//while
-					designObject.addParsedDocumentPart(sbHTML.toString());	
-					addParsedDocPart(sbHTML.toString());
-					//long lDiffMS = System.currentTimeMillis()-lStart;
-					//System.out.println(this.designObject + " preparePage() took: "+lDiffMS + "ms, parts="+designObject.getParsedDocumentParts(true).size());
-				}//else
-			}//if design has html content 
+							if(iPos>0)//we found an end tag
+							{
+								iPos += sEndMarker.length(); //skip past the tag
+								sField = sBuffer.substring(0, iPos);
+								sBuffer = sBuffer.substring(iPos, sBuffer.length());
+								HTMLControl dElement = new HTMLControl(this, sField);
+								designObject.addParsedDocumentPart(dElement);
+								createDocumentItem(dElement);
+								addParsedDocPart(dElement);
+							}
+							iPos = sBuffer.indexOf(HTMLControl.FIELD_START);
+							if(iPos<0) //saves a double buffer copy
+							{
+								sbHTML.delete(0, sbHTML.length());
+								sbHTML.append(sBuffer);
+							}
+						}//while
+						designObject.addParsedDocumentPart(sbHTML.toString());
+						addParsedDocPart(sbHTML.toString());
+						//long lDiffMS = System.currentTimeMillis()-lStart;
+						//System.out.println(this.designObject + " preparePage() took: "+lDiffMS + "ms, parts="+designObject.getParsedDocumentParts(true).size());
+					}//else
+				}//synchronized
+			}//if design has html content
 		}//object not null
 
 	}
@@ -616,26 +632,29 @@ public class HTMLDocument extends Document implements Cloneable
 
 	public void setHTMLControl(String sItemName, HTMLControl ctrl)
 	{
-		if(designObject==null) return;
-		/*boolean bFound = false;
+		//IMPORTANT: designObject is the shared, cached template for this page - it must never be
+		//mutated per-request (doing so previously leaked one request's/page's fields into every
+		//other request that hits the cached page). Mutate this request's own parsed-parts copy.
+		if(designObject==null || sItemName==null || sItemName.length()==0) return;
+
 		ArrayList arrDocParts = getParsedDocParts();
+		boolean bFound = false;
 		for(int i=0; i<arrDocParts.size(); i++)
 		{
 			Object o = arrDocParts.get(i);
 			if(o instanceof HTMLControl)
 			{
 				HTMLControl it = (HTMLControl)o;
-				if(it.getName().equalsIgnoreCase(sItemName)) 
+				if(it.getName().equalsIgnoreCase(sItemName))
 				{
-					designObject.setHTMLControl(sItemName, ctrl); 
+					arrDocParts.set(i, ctrl);
 					bFound = true;
 				}
 			}
 		}//for
 
-
-		if(!bFound) designObject.setHTMLControl(sItemName, ctrl);*/
-		designObject.setHTMLControl(sItemName, ctrl);
+		if(!bFound) arrDocParts.add(ctrl);
+		m_controlIndex = null; //invalidate so getHTMLControl()/getAllHTMLControls() see the change
 	}
 
 	/**
@@ -1186,26 +1205,27 @@ public class HTMLDocument extends Document implements Cloneable
 		m_vExtraHeaders.add(sNewEntry);
 	}
 
-	public void copyControls(HTMLDocument docDestination, boolean bOverwriteExisting) 
+	public void copyControls(HTMLDocument docDestination, boolean bOverwriteExisting)
 	{
-		/*Enumeration en = getAllItems();
-		while(en.hasMoreElements())
-		{
-			DocumentItem di = (DocumentItem)en.nextElement();
-			String sItemName = di.getName();
-			boolean bHasItem = docDestination.hasItem(sItemName);
-			if((bHasItem && bOverwriteExisting) || !bHasItem)
-			{
-				//HTMLControl ctrls[] = getAllHTMLControls(sItemName);
-				HTMLControl ctrl = getHTMLControl(sItemName);
-				if(ctrl!=null)
-				{
-					docDestination.setHTMLControl(sItemName, ctrl);					
-				}
-			}
+		//Iterate THIS request's own parsed-parts copy (not the shared cached designObject) and
+		//hand the destination a reference to those per-request HTMLControl objects. Delegating to
+		//designObject.copyControls() used to splice controls straight from one cached page's
+		//shared template into another's, corrupting both pages' cache entries for every future
+		//request until the cache expired.
+		if(designObject==null) return;
 
-		}	*/
-		if(designObject!=null) designObject.copyControls(docDestination, bOverwriteExisting);
+		ArrayList arrDocParts = getParsedDocParts();
+		for(int i=0; i<arrDocParts.size(); i++)
+		{
+			Object obj = arrDocParts.get(i);
+			if(obj instanceof HTMLControl)
+			{
+				HTMLControl dElement = (HTMLControl) obj;
+				boolean bHasControl = docDestination.getHTMLControl(dElement.getName())!=null;
+				if((bHasControl && bOverwriteExisting) || !bHasControl)
+					docDestination.setHTMLControl(dElement.getName(), dElement);
+			}
+		}
 	}
 
 
