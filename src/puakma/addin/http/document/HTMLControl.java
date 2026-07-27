@@ -953,6 +953,8 @@ public class HTMLControl
 		return sWorkValue;
 	}
 
+	private static final int MAX_COMPUTEDPAGE_DEPTH = 10;
+
 	/**
 	 *
 	 */
@@ -964,6 +966,17 @@ public class HTMLControl
 		if(sValue==null) sValue = "";
 		if(sValue!=null && sValue.length()>0)
 		{
+			//Backstop for a genuine design-level cycle: page A computes page B whose own design
+			//computes A again. Those nested controls are built by their own docTemp's prepare()
+			//so they see an incrementing depth and this limit will fire. (A control copied in
+			//from another document would NOT - it keeps that document's depth - which is one
+			//more reason copyControls() is no longer called below.)
+			if(pDocument.getComputedPageDepth() >= MAX_COMPUTEDPAGE_DEPTH)
+			{
+				sbPage.append("<!-- COMPUTEDPAGE_RECURSION_LIMIT Name=" + sValue + " -->");
+				return sbPage;
+			}
+
 			DesignElement de = pSession.getDesignObject(sValue, DesignElement.DESIGN_TYPE_PAGE);
 			if(de==null) return sbPage;
 			try
@@ -990,9 +1003,20 @@ public class HTMLControl
 				pDocument.copyAllItems(docTemp);
 				docTemp.setContent((byte[])null);
 				docTemp.designObject = deWorkingCopy;
+				docTemp.setComputedPageDepth(pDocument.getComputedPageDepth() + 1);
 
 				docTemp.prepare();
-				pDocument.copyControls(docTemp, true);				
+				//Deliberately NOT copying this page's controls onto docTemp. That call was a
+				//no-op for the whole life of this code path: it wrote into the shared cached
+				//DesignElement while the render below reads the per-request parts list that
+				//prepare() has already populated. Making copyControls() per-request correct
+				//woke it up, and it immediately self-referenced - it copies THIS control (a
+				//computed-page field) into the very page it computes, so rendering docTemp
+				//re-entered getComputedPageHTML() forever (StackOverflowError). It is also
+				//unsound: copyControls() hands over raw HTMLControl references whose
+				//pDocument still points at this document, unlike copyAllItems() above which
+				//clones and rebinds. docTemp already has everything it needs - the parent's
+				//item values from copyAllItems(), and page B's own controls from prepare().
 				docTemp.renderDocument(bReadMode, false);
 				//docTemp.copyAllNewItems(pDocument);		
 				/*

@@ -59,6 +59,7 @@ public class HTMLDocument extends Document implements Cloneable
 	private boolean m_bDataPosted = false;
 	private ArrayList m_arrParsedDocParts = null;
 	private HashMap<String, ArrayList<HTMLControl>> m_controlIndex = null;
+	private int m_iComputedPageDepth = 0;
 
 
 	public HTMLDocument() { }
@@ -490,6 +491,21 @@ public class HTMLDocument extends Document implements Cloneable
 	public HTTPSessionContext getHTTPSessionContext()
 	{
 		return m_sess;
+	}
+
+	/**
+	 * How many nested "computed page" fields deep this document was built from.
+	 * Used by HTMLControl.getComputedPageHTML() to stop a page that (directly or
+	 * via a chain of other pages) computes itself from recursing until the stack overflows.
+	 */
+	public int getComputedPageDepth()
+	{
+		return m_iComputedPageDepth;
+	}
+
+	public void setComputedPageDepth(int iDepth)
+	{
+		m_iComputedPageDepth = iDepth;
 	}
 
 
