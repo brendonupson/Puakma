@@ -392,7 +392,12 @@ public class DesignElement implements Cloneable, CacheableItem
 	}
 
 	/**
-	 * required prior to the call to a computed page so we don't get the old page data
+	 * Clears the cached parsed-parts list for this design element. Do NOT call
+	 * this to "reset" a design element before reusing it for a computed page -
+	 * the parsed parts are the shared, cache-owned representation reused across
+	 * every request for this page (including as a computed-page target);
+	 * clearing it per-render defeats the cache and races with
+	 * HTMLDocument.prepare()/preparePage()'s double-checked-locking build.
 	 */
 	public synchronized void removeParsedDocumentParts()
 	{

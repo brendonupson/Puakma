@@ -981,28 +981,22 @@ public class HTMLControl
 			if(de==null) return sbPage;
 			try
 			{
-				//System.out.println("--- getComputedPageHTML ----");
-				/*HTMLDocument docTemp = (HTMLDocument)pDocument.clone();
-              docTemp.setContent((byte[])null);
-              docTemp.designObject = de;
-              docTemp.prepare(null);
-              docTemp.renderDocument(bReadMode, false);
-				 */
-
 				//de is the shared, cached design element for the target page - every other
-				//concurrent/future request for that page holds the same reference. Forcing a
-				//re-parse (removeParsedDocumentParts) and reusing it directly here used to blow
-				//away and rebuild that shared cache entry on every single render of this control,
-				//and could re-wrap already-merged parent-page content on top of itself. Work on a
-				//private clone instead so the shared cache entry is never touched.
-				DesignElement deWorkingCopy = (DesignElement)de.clone();
-				deWorkingCopy.removeParsedDocumentParts();
-
+				//concurrent/future request for that page (top-level or computed) holds the
+				//same reference. Do NOT clone or removeParsedDocumentParts() here: that
+				//used to defeat the shared parts cache on every render of this control
+				//(a regression this fix removes) and could double-apply the ParentPage
+				//merge on top of already-merged content. HTMLDocument.preparePage()'s
+				//synchronized double-checked-locking already builds the parts list
+				//exactly once, and getParsedDocumentParts() hands back freshly
+				//instantiated HTMLControls bound to docTemp on every read - so reusing
+				//"de" directly is exactly as safe as any normal top-level page load, and
+				//gets the same one-time-parse caching benefit.
 				HTMLDocument docTemp = new HTMLDocument(pSession);
 				docTemp.rPath = pDocument.rPath;
 				pDocument.copyAllItems(docTemp);
 				docTemp.setContent((byte[])null);
-				docTemp.designObject = deWorkingCopy;
+				docTemp.designObject = de;
 				docTemp.setComputedPageDepth(pDocument.getComputedPageDepth() + 1);
 
 				docTemp.prepare();
