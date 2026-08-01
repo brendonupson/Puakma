@@ -452,10 +452,31 @@ public class SharedActionClassLoader extends ClassLoader
 	}*/
 
 	/**
-	 * This method should not return anything useful for resources that 
+	 * Finds all resources with the given name across the jar files loaded
+	 * as design elements (m_vJars). This backs the inherited
+	 * <code>getResources()</code>, which is what <code>ServiceLoader</code>
+	 * (and therefore e.g. <code>ScriptEngineManager</code>) uses to discover
+	 * provider-configuration files such as META-INF/services entries.
+	 * Without this override, such files bundled in a jar loaded via this
+	 * classloader are invisible to ServiceLoader.
+	 */
+	protected Enumeration<URL> findResources(String name) throws IOException
+	{
+		Vector<URL> urls = new Vector<URL>();
+		for(int i=0; i<m_vJars.size(); i++)
+		{
+			File fJar = (File)m_vJars.get(i);
+			URL u = getResourceURLFromJar(fJar, name);
+			if(u!=null) urls.add(u);
+		}
+		return urls.elements();
+	}
+
+	/**
+	 * This method should not return anything useful for resources that
 	 * come from the db.
 	 */
-	public URL getResource(String name) 
+	public URL getResource(String name)
 	{
 		URL u = null;        
 		if (name == null) return null;

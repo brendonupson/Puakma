@@ -583,6 +583,49 @@ public class pmaClassLoader extends ClassLoader
 	}
 
 	/**
+	 * Finds all resources with the given name across this classloader's
+	 * repository. This backs the inherited <code>getResources()</code>,
+	 * which is what <code>ServiceLoader</code> (and therefore
+	 * <code>ScriptEngineManager</code>) uses to discover provider-configuration
+	 * files such as META-INF/services entries. Without this override the
+	 * default no-op <code>findResources()</code> makes every such file in
+	 * this classloader's repository invisible to ServiceLoader.
+	 *
+	 * @param   name    the name of the resource, to be used as is.
+	 * @return  an Enumeration of URLs for all matching resources found.
+	 */
+	protected Enumeration<URL> findResources(String name) throws IOException
+	{
+		Vector<URL> urls = new Vector<>();
+		Enumeration<File> repEnum = repository.elements();
+		while (repEnum.hasMoreElements())
+		{
+			File file = repEnum.nextElement();
+			if (file.isDirectory())
+			{
+				String fileName = name.replace('/', File.separatorChar);
+				File resFile = new File(file, fileName);
+				if (resFile.exists())
+				{
+					urls.add(new URL("file", null, resFile.getAbsolutePath()));
+				}
+			}
+			else
+			{
+				try (ZipFile zf = new ZipFile(file))
+				{
+					ZipEntry ze = zf.getEntry(name);
+					if (ze != null)
+					{
+						urls.add(new URL("jar:file:" + file.getAbsolutePath() + "!/" + name));
+					}
+				}
+			}
+		}
+		return urls.elements();
+	}
+
+	/**
 	 * Find a resource with a given name.  The return is a URL to the
 	 * resource. Doing a getContent() on the URL may return an Image,
 	 * an AudioClip,or an InputStream.
