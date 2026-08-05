@@ -154,10 +154,10 @@ public class pmaMain extends Thread
 	/**
 	 * Add the AddIn path to the classpath
 	 */
-	private static void addClasses(String szPath, Vector<File> v)
+	private static void addClasses(String sPath, Vector<File> v)
 	{
-		if(szPath==null) return;
-		File fDir = new File(szPath);
+		if(sPath==null) return;
+		File fDir = new File(sPath);
 		File fTest;
 		int i;
 
@@ -167,15 +167,20 @@ public class pmaMain extends Thread
 
 		v.addElement(fDir); //takes care of bare .class files
 
-		String szFileList[] = fDir.list();
-
-		for(i=0; i<szFileList.length; i++)
+		String sFileList[] = fDir.list();
+		if(sFileList==null)
 		{
-			fTest = new File(szPath, szFileList[i]);
-			int iPos = szFileList[i].lastIndexOf('.');
+			System.out.println("ERROR: Could not list files in " + fDir.getAbsolutePath());
+			return;
+		}
+
+		for(i=0; i<sFileList.length; i++)
+		{
+			fTest = new File(sPath, sFileList[i]);
+			int iPos = sFileList[i].lastIndexOf('.');
 			String szExt = ""; 
 
-			if(iPos>=0) szExt = szFileList[i].substring(iPos, szFileList[i].length()).toUpperCase();
+			if(iPos>=0) szExt = sFileList[i].substring(iPos, sFileList[i].length()).toUpperCase();
 
 			if(!fTest.isDirectory() && (szExt.equals(".JAR") || szExt.equals(".ZIP")))
 			{
@@ -193,24 +198,29 @@ public class pmaMain extends Thread
 	/**
 	 *
 	 */
-	private static void addJDBCJars(String szPath, Vector<File> v)
+	private static void addJDBCJars(String sPath, Vector<File> v)
 	{
-		if(szPath==null) return;
-		File fJDBCDir = new File(szPath);
+		if(sPath==null) return;
+		File fJDBCDir = new File(sPath);
 		File fTest;
 		int i;
 
 		//check it exists and is a directory
 		if(!fJDBCDir.exists()) return;
 		if(!fJDBCDir.isDirectory()) return;
-		String szFileList[] = fJDBCDir.list();
-
-		for(i=0; i<szFileList.length; i++)
+		String sFileList[] = fJDBCDir.list();
+		if(sFileList==null)
 		{
-			fTest = new File(szPath, szFileList[i]);
-			if(!fTest.isDirectory() && isJarOrZip(szFileList[i]))
+			System.out.println("ERROR: Could not list files in " + fJDBCDir.getAbsolutePath());
+			return;
+		}
+
+		for(i=0; i<sFileList.length; i++)
+		{
+			fTest = new File(sPath, sFileList[i]);
+			if(!fTest.isDirectory() && isJarOrZip(sFileList[i]))
 			{
-				System.out.println("LOADING JDBC DRIVER: " + szFileList[i]);
+				System.out.println("LOADING JDBC DRIVER: " + sFileList[i]);
 				v.addElement(fTest);
 			}
 			else

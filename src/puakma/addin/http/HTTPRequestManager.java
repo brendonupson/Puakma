@@ -111,7 +111,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private boolean m_bDataPosted=false;
 	private float m_fHTTPVersion=1;
 	private int m_iConnectionsLeft = 1;
-	private int m_iServerTimeout=1;
+	private int m_iKeepAliveTimeoutSeconds=1;
 	private String m_sClientIPAddress = null;
 	private String m_sClientHostName = null;
 
@@ -190,9 +190,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(m_bSecure) m_sHTTPURLPrefix="https";
 		try{ m_iHTTPPort = m_sock.getLocalPort(); } catch(Exception e){}
 		m_iConnectionsLeft = m_http_server.getMaxRequestsPerConnection();
-		m_iServerTimeout = (m_http_server.iHTTPPortTimeout/1000);
-		if(m_iServerTimeout<=0) m_iServerTimeout=1;      
-		//System.out.println(request_id + " constructor()" );
+		m_iKeepAliveTimeoutSeconds = (m_http_server.iHTTPPortTimeout/1000);
+		if(m_iKeepAliveTimeoutSeconds<=0) m_iKeepAliveTimeoutSeconds=60;      
+
 		m_sSystemHostName = szHostName;
 		m_bAllowByteRangeServing = m_http_server.serverAllowsByteServing();
 
@@ -2183,7 +2183,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			else
 			{
 				m_os.write(("Connection: Keep-Alive" + HTTP_NEWLINE).getBytes());
-				String sTimeout = "Keep-Alive: timeout=" + m_iServerTimeout + ", max=" + m_iConnectionsLeft;
+				String sTimeout = "Keep-Alive: timeout=" + m_iKeepAliveTimeoutSeconds + ", max=" + m_iConnectionsLeft;
 				m_os.write((sTimeout + HTTP_NEWLINE).getBytes());
 				out_lines.add("Connection: Keep-Alive");
 				out_lines.add(sTimeout);

@@ -1153,7 +1153,7 @@ public class TornadoApplication implements ErrorDetect
 					HashMap<String, String> hm = new HashMap<String, String>();				
 					hm.put("dbdriver", sDriverClass);
 					hm.put("dburl", sDBURL);
-					hm.put("dburlptions", sDBURLOptions);
+					hm.put("dburloptions", sDBURLOptions);
 					hm.put("dbname", sDBName);
 					hm.put("dbusername", sUser);
 					hm.put("dbpassword", sPW);
