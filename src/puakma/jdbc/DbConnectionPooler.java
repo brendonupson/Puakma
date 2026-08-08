@@ -1,5 +1,5 @@
 /** ***************************************************************
-dbConnectionPooler.java
+DbConnectionPooler.java
 Copyright (C) 2001  Mike Skillicorn 
 http://www.seatechnology.com.au mike@mikeskillicorn.com
 
@@ -21,7 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 
 /**
- * Title:        dbConnectionPooler<p>
+ * Title:        DbConnectionPooler<p>
  * Description:  Thread Safe Database Connection Pooler
  * Copyright:    Copyright (c) Mike Skillicorn
  * Company:
@@ -30,7 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  * NOTES *****
  *
- * The dbConnectionPooler pools connections to a database according to
+ * The DbConnectionPooler pools connections to a database according to
  * a single set of connection parameters. Each connection is defined by a
  * database driver, a database, a user name and a user password combination.
  *
@@ -50,7 +50,7 @@ import puakma.pooler.BasePooler;
 import puakma.pooler.PooledItem;
 import puakma.system.SystemContext;
 
-public class dbConnectionPooler extends BasePooler implements ErrorDetect
+public class DbConnectionPooler extends BasePooler implements ErrorDetect
 {  
 	private String m_sdbDriver;
 	private String m_sdbName;
@@ -62,7 +62,7 @@ public class dbConnectionPooler extends BasePooler implements ErrorDetect
 	private int m_iInitialCount ;
 	//private int m_iExpirySeconds;
 
-	public dbConnectionPooler( int iMaxCount, int iLockWaitMS, int iInitialCount,
+	public DbConnectionPooler( int iMaxCount, int iLockWaitMS, int iInitialCount,
 			int iExpirySeconds, String sdbDriver, String sdbName,
 			String sdbUser, String sdbPassword, SystemContext paramSysCtx ) throws Exception
 			{  super( iMaxCount, iLockWaitMS, iExpirySeconds );
@@ -312,7 +312,7 @@ public class dbConnectionPooler extends BasePooler implements ErrorDetect
 
 	public String getErrorSource()
 	{
-		return "dbConnectionPooler";
+		return "DbConnectionPooler";
 	}
 
 	public String getErrorUser()

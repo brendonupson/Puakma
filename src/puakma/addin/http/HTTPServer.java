@@ -113,6 +113,12 @@ public class HTTPServer extends Thread implements ErrorDetect
 
 	public static final String SESSIONID_LABEL="_pma_sess_id";
 
+	/**
+	 * How long to allow for writing the 503 busy reply in dispatch(). Deliberately short:
+	 * that write happens on the single accept thread.
+	 */
+	private static final int BUSY_REPLY_TIMEOUT_MS = 500;
+
 
 	public HTTPServer(SystemContext paramCtx, int iPort, HTTP paramParent, boolean paramSSL)
 	{
@@ -466,8 +472,34 @@ public class HTTPServer extends Thread implements ErrorDetect
 		if(!bOK)
 		{
 			m_pSystem.doError("HTTPServer.RequestThreadError", this);
-			// sock.close(); //drop the connection??        
-		}		
+			/*
+			 * Previously we just logged and left the socket dangling, so the client sat on a
+			 * TCP timeout and then retried immediately - which amplified the load that caused
+			 * the thread exhaustion in the first place. Answer a real 503 so well behaved
+			 * clients back off instead.
+			 *
+			 * The setSoTimeout() is required, not cosmetic: when the trust store is disabled
+			 * the TLS handshake is deferred to the first I/O, ie this write, and the handshake
+			 * *reads* from the client. SO_TIMEOUT bounds those reads, so a client that opens a
+			 * connection and then goes silent cannot wedge the accept loop. (It does not bound
+			 * the write itself - SO_TIMEOUT never does - but this reply is a couple of hundred
+			 * bytes and fits in the socket send buffer.) Keep it short: this runs on the single
+			 * accept thread, which has already spent up to HTTPThreadCreateTimeout waiting in
+			 * getNextThread() before arriving here.
+			 */
+			try
+			{
+				sock.setSoTimeout(BUSY_REPLY_TIMEOUT_MS);
+				sock.getOutputStream().write(("HTTP/1.1 503 Service Unavailable\r\n"
+						+ "Retry-After: 10\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+						.getBytes("ISO-8859-1"));
+			}
+			catch(Exception e) { /* client already gone, nothing useful to do */ }
+			finally
+			{
+				try{ sock.close(); }catch(Exception e){}
+			}
+		}
 	}
 
 	/**

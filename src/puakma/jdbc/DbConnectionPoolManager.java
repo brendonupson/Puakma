@@ -1,5 +1,5 @@
 /** ***************************************************************
-dbConnectionPoolManager.java
+DbConnectionPoolManager.java
 Copyright (C) 2001  Mike Skillicorn 
 http://www.seatechnology.com.au mike@mikeskillicorn.com
 
@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 package puakma.jdbc;
 
 import java.sql.Connection;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.Hashtable;
@@ -32,25 +33,25 @@ import puakma.system.SystemContext;
 import puakma.system.pmaSystem;
 
 
-public class dbConnectionPoolManager implements ErrorDetect
+public class DbConnectionPoolManager implements ErrorDetect
 {
 	//private boolean m_bStopped;
-	private Hashtable<String, dbConnectionPooler> m_map = new Hashtable<String, dbConnectionPooler>();
+	private Hashtable<String, DbConnectionPooler> m_map = new Hashtable<String, DbConnectionPooler>();
 	private SystemContext m_sysCtx;
-	private dbConnectionCleaner m_Cleaner;
+	private DbConnectionCleaner m_Cleaner;
 	private boolean m_bRunning = true;
 	private String m_sPoolName = "";
 
 
-	private class dbConnectionCleaner extends Thread implements ErrorDetect
+	private class DbConnectionCleaner extends Thread implements ErrorDetect
 	{
 		private boolean m_bCleanerRunning = true;
-		//private dbConnectionPoolManager m_mgr;
+		//private DbConnectionPoolManager m_mgr;
 
 
-		public dbConnectionCleaner()//(dbConnectionPoolManager mgr)
+		public DbConnectionCleaner()//(DbConnectionPoolManager mgr)
 		{
-			super("dbConnectionCleaner:"+m_sPoolName);
+			super("DbConnectionCleaner:"+m_sPoolName);
 			//m_mgr = mgr;
 			this.setDaemon(true);
 		}
@@ -68,7 +69,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 		public void run() 
 		{
-			//System.out.println("STARTUP: dbConnectionCleaner ");
+			//System.out.println("STARTUP: DbConnectionCleaner ");
 			final int iMinimumTimeMS = 30000;
 			while(m_bCleanerRunning)
 			{				
@@ -122,11 +123,11 @@ public class dbConnectionPoolManager implements ErrorDetect
 	/**
 	 * 
 	 */
-	public dbConnectionPoolManager( SystemContext paramSysCtx, String sPoolName )
+	public DbConnectionPoolManager( SystemContext paramSysCtx, String sPoolName )
 	{
 		if(sPoolName!=null) m_sPoolName = sPoolName;
 		m_sysCtx = paramSysCtx;
-		m_Cleaner = new dbConnectionCleaner();
+		m_Cleaner = new DbConnectionCleaner();
 		m_Cleaner.start();
 	}
 
@@ -141,7 +142,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 	{
 		if (!m_map.containsKey( sAlias.trim().toLowerCase()) )
 		{
-			m_map.put( sAlias.trim().toLowerCase(), new dbConnectionPooler(
+			m_map.put( sAlias.trim().toLowerCase(), new DbConnectionPooler(
 					iMaxCount, iLockWaitMS, iInitialCount, iExpirySeconds,
 					sdbDriver, sdbName, sdbUser, sdbPassword, m_sysCtx ));
 			return( true );
@@ -155,9 +156,9 @@ public class dbConnectionPoolManager implements ErrorDetect
 	 * @return
 	 * @throws Exception
 	 */
-	public dbConnectionPooler getPooler( String sAlias ) throws Exception
+	public DbConnectionPooler getPooler( String sAlias ) throws Exception
 	{  
-		dbConnectionPooler pool = (dbConnectionPooler)m_map.get( sAlias.trim().toLowerCase() );
+		DbConnectionPooler pool = (DbConnectionPooler)m_map.get( sAlias.trim().toLowerCase() );
 		if ( pool != null ) return( pool );
 		else throw new Exception( "Invalid call to getPooler(). Alias [" + sAlias + "] does not exist." );
 	}
@@ -165,7 +166,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 	public boolean hasPool( String sAlias )
 	{
-		dbConnectionPooler pool = (dbConnectionPooler)m_map.get( sAlias.trim().toLowerCase() );
+		DbConnectionPooler pool = (DbConnectionPooler)m_map.get( sAlias.trim().toLowerCase() );
 		if(pool!=null) return true;
 		return false;
 	}
@@ -177,7 +178,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 		{  
 			try
 			{  
-				dbConnectionPooler pool = (dbConnectionPooler)m_map.get( s );
+				DbConnectionPooler pool = (DbConnectionPooler)m_map.get( s );
 				if ( pool != null ) pool.destroy();
 			}
 			catch (Exception e )
@@ -190,15 +191,24 @@ public class dbConnectionPoolManager implements ErrorDetect
 		return( false );
 	}
 
-	public synchronized java.sql.Connection getConnection( String sAlias ) throws Exception
-	{		
+	/**
+	 * NOT synchronized. The pooler is fully self-synchronized with a correct wait/notify
+	 * protocol, and m_map is a Hashtable. Holding the manager monitor here would mean a
+	 * thread waiting for a connection blocks every other thread trying to *release* one
+	 * (releaseConnection needs the same monitor), so no waiter could ever be woken by a
+	 * release - they all burn the full lock wait and time out. See the pool-starvation
+	 * analysis; this convoy was the cause of the 2026 server wedges.
+	 */
+	public java.sql.Connection getConnection( String sAlias ) throws Exception
+	{
 		if(sAlias==null) return null;
 
 		String s = sAlias.trim().toLowerCase();
-		if ( !m_map.containsKey( s ) )
+		//single atomic get - containsKey()+get() would be a race now this is unsynchronized
+		DbConnectionPooler pooler = m_map.get( s );
+		if ( pooler == null )
 			throw new Exception( "Error getConnection(). Alias: \"" + sAlias + "\" has not been registered." );
 
-		dbConnectionPooler pooler = (dbConnectionPooler)m_map.get( s );
 		Connection cx = pooler.getConnection();
 		//set autocommit ??
 		//the next line ensures a pool created with bad credentials etc will be removed from the manager
@@ -214,26 +224,31 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 	}
 
-	public synchronized void releaseConnection( String sAlias, Connection cnx ) throws Exception
-	{  
+	/**
+	 * NOT synchronized - see the note on getConnection(). A release must never be able to
+	 * queue behind a thread that is waiting for a connection.
+	 */
+	public void releaseConnection( String sAlias, Connection cnx ) throws Exception
+	{
 		String s = sAlias.trim().toLowerCase();
-		if ( !m_map.containsKey( s ) )
+		DbConnectionPooler pooler = m_map.get( s );
+		if ( pooler == null )
 			throw new Exception( "Error releaseConnection(). Alias: " + sAlias + " has not been registered." );
-		((dbConnectionPooler)m_map.get( s )).releaseConnection( cnx );
+		pooler.releaseConnection( cnx );
 	}
 
 
 	/**
-	 * This method looks in each pool and releases the passed connection
+	 * This method looks in each pool and releases the passed connection.
+	 * NOT synchronized - see the note on getConnection().
 	 */
-	public synchronized boolean releaseConnection( Connection cnx )
+	public boolean releaseConnection( Connection cnx )
 	{
 		if(cnx==null) return false;
 
-		Enumeration<dbConnectionPooler> en = m_map.elements();
-		while ( en.hasMoreElements() )
+		//iterate a snapshot, the map may be mutated while we walk it
+		for ( DbConnectionPooler pool : new ArrayList<DbConnectionPooler>( m_map.values() ) )
 		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
 			if(pool!=null && pool.hasItem(cnx))
 			{
 				m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Releasing Connection: "+ Thread.currentThread().getName(), this);
@@ -261,13 +276,13 @@ public class dbConnectionPoolManager implements ErrorDetect
 		m_bRunning = false;
 		m_Cleaner.destroy();
 
-		Collection<dbConnectionPooler> coll = m_map.values();
-		Iterator<dbConnectionPooler> it = coll.iterator();
+		Collection<DbConnectionPooler> coll = m_map.values();
+		Iterator<DbConnectionPooler> it = coll.iterator();
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Shutting down connection pool manager.", this );
 		//m_bStopped = true;
 		while ( it.hasNext() )
 		{  
-			dbConnectionPooler pool = (dbConnectionPooler)it.next();
+			DbConnectionPooler pool = (DbConnectionPooler)it.next();
 			try   
 			{ 
 				if ( pool != null ) pool.destroy(); 
@@ -287,10 +302,10 @@ public class dbConnectionPoolManager implements ErrorDetect
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Restarting connection pool manager.", this);
 		//m_bStopped = false;
 
-		Enumeration<dbConnectionPooler> en = m_map.elements();
+		Enumeration<DbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
+			DbConnectionPooler pool = (DbConnectionPooler)en.nextElement();
 			try   {  if ( pool != null ) pool.restart(); }
 			catch (Exception e )
 			{
@@ -304,10 +319,10 @@ public class dbConnectionPoolManager implements ErrorDetect
 		m_sysCtx.doDebug(pmaLog.DEBUGLEVEL_DETAILED, "Resetting connection pool manager.", this);
 		//m_bStopped = false;
 
-		Enumeration<dbConnectionPooler> en = m_map.elements();
+		Enumeration<DbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
+			DbConnectionPooler pool = (DbConnectionPooler)en.nextElement();
 			try   {  if ( pool != null ) pool.shutdown(); }
 			catch (Exception e )
 			{
@@ -324,10 +339,10 @@ public class dbConnectionPoolManager implements ErrorDetect
 	 */
 	public synchronized void doExpire()
 	{
-		Enumeration<dbConnectionPooler> en = m_map.elements();
+		Enumeration<DbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
+			DbConnectionPooler pool = (DbConnectionPooler)en.nextElement();
 			if ( pool != null ) pool.doExpire();			
 		}
 	}
@@ -350,10 +365,10 @@ public class dbConnectionPoolManager implements ErrorDetect
 	{
 		StringBuilder sb = new StringBuilder(256);
 		sb.append("------ DB POOL STATUS ------ (" + m_map.size() + ") \r\n");
-		Enumeration<dbConnectionPooler> en = m_map.elements();
+		Enumeration<DbConnectionPooler> en = m_map.elements();
 		while ( en.hasMoreElements() )
 		{
-			dbConnectionPooler pool = (dbConnectionPooler)en.nextElement();
+			DbConnectionPooler pool = (DbConnectionPooler)en.nextElement();
 			if(pool!=null) sb.append(pool.getStatus());
 		}
 
@@ -365,7 +380,7 @@ public class dbConnectionPoolManager implements ErrorDetect
 
 	public String getErrorSource()
 	{
-		return "dbConnectionPoolManager";
+		return "DbConnectionPoolManager";
 	}
 
 	public String getErrorUser()

@@ -39,7 +39,7 @@ public class pmaLog
 	private String m_szDateFormat;
 	private PrintWriter m_printLog;
 	private SimpleDateFormat m_simpledf;
-	private dbConnectionPooler m_dbPool;
+	private DbConnectionPooler m_dbPool;
 	private String m_sLogFileName=null;
 	private long m_ErrCount=0;
 	//private String sLogReceivingAddIns[]=null;
@@ -131,7 +131,7 @@ public class pmaLog
 	 */
 	private void createDBPool() throws Exception
 	{
-		m_dbPool = new dbConnectionPooler(10, 10000, 1,
+		m_dbPool = new DbConnectionPooler(10, 10000, 1,
 				1800, m_pSystem.getSystemDBDriver(), m_pSystem.getSystemDBURL(),
 				m_pSystem.getSystemDBUserName(), m_pSystem.getSystemDBPassword(), new SystemContext(m_pSystem) );
 

@@ -54,7 +54,7 @@ import puakma.addin.http.action.SharedActionClassLoader;
 import puakma.addin.http.document.DesignElement;
 import puakma.error.ErrorDetect;
 import puakma.error.pmaLog;
-import puakma.jdbc.dbConnectionPoolManager;
+import puakma.jdbc.DbConnectionPoolManager;
 import puakma.security.LoginResult;
 import puakma.security.PropertyEncoder;
 import puakma.security.pmaAuthenticator;
@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.1.3";
-	private final int PUAKMA_BUILD=1127;
-	private final String PUAKMA_BUILD_DATE="5 Aug 2026";
+	private final String PUAKMA_VERSION="6.1.4";
+	private final int PUAKMA_BUILD=1129;
+	private final String PUAKMA_BUILD_DATE="9 Aug 2026";
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
@@ -119,7 +119,7 @@ public class pmaSystem implements ErrorDetect
 	private int m_iSystemConnReleaseCount=0;
 
 
-	private dbConnectionPoolManager m_DBPoolMgr;
+	private DbConnectionPoolManager m_DBPoolMgr;
 	private InetAddress m_addressLocal;
 
 	/**
@@ -391,7 +391,7 @@ public class pmaSystem implements ErrorDetect
 		long lPoolExpire = Util.toInteger(sPoolExpire);
 		if(lPoolExpire>0) iPoolConnectionExpireSeconds = (int)lPoolExpire;
 
-		m_DBPoolMgr = new dbConnectionPoolManager(new SystemContext(this), "SYSTEM");
+		m_DBPoolMgr = new DbConnectionPoolManager(new SystemContext(this), "SYSTEM");
 		try
 		{
 			m_DBPoolMgr.createPooler(SystemContext.DBALIAS_SYSTEM, iMaxConnectionCount, iPoolConnectionTimeoutMS, 0,
