@@ -53,13 +53,13 @@ public class TornadoServerInstance
 	 * @param sAppPath
 	 * @return
 	 */
-	public synchronized TornadoApplication getTornadoApplication(String sAppPath)
+	public TornadoApplication getTornadoApplication(String sAppPath)
 	{
 		RequestPath rp = new RequestPath(sAppPath);
 		return getTornadoApplication(rp.Group, rp.Application);
 	}
 
-	public synchronized TornadoApplication getTornadoApplication(long lAppID)
+	public TornadoApplication getTornadoApplication(long lAppID)
 	{
 		RequestPath rp = getApplicationPath(lAppID);		
 		return rp==null ? null : getTornadoApplication(rp.Group, rp.Application);
@@ -103,7 +103,7 @@ public class TornadoServerInstance
 	 * design cache and apps
 	 *
 	 */
-	public synchronized void flushApplicationCache()
+	public void flushApplicationCache()
 	{
 		m_cacheDesign.expireAll(0);
 		m_cacheDesign.resetCounters();
@@ -138,22 +138,48 @@ public class TornadoServerInstance
 	 * @param sAppName
 	 * @return
 	 */
-	public synchronized TornadoApplication getTornadoApplication(String sAppGroup, String sAppName)
+	public TornadoApplication getTornadoApplication(String sAppGroup, String sAppName)
 	{
 		if(sAppGroup==null) sAppGroup="";
 		if(sAppName==null) sAppName="";
 
+		/*
+		 * Single atomic get rather than containsKey()+get(): those are two separate calls,
+		 * and flushApplicationCache() can clear the map between them, which would return
+		 * null to a caller that dereferences it immediately (HTTPRequestManager).
+		 */
 		String sKey = ("/" + sAppGroup + "/" + sAppName).toLowerCase();
-		//System.out.println("Locating key: " + sKey);
-		if(m_htApplications.containsKey(sKey)) return (TornadoApplication)m_htApplications.get(sKey);
+		TornadoApplication ta = m_htApplications.get(sKey);
+		if(ta!=null) return ta;
+
 		//check if wildcard app
 		String sKeyWildcard = ("/*/" + sAppName).toLowerCase();
-		if(m_htApplications.containsKey(sKeyWildcard)) return (TornadoApplication)m_htApplications.get(sKeyWildcard);
+		ta = m_htApplications.get(sKeyWildcard);
+		if(ta!=null) return ta;
 
-		TornadoApplication ta = new TornadoApplication(m_pSystem, m_cacheDesign, sAppGroup, sAppName);
-		//if(ta.appExists()) m_htApplications.put(sKey, ta);
-		if(ta.appExists()) m_htApplications.put(ta.getApplicationKey(), ta);
-		return ta;
+		/*
+		 * Construct with NO lock held. This constructor does three DB round trips
+		 * (getApplicationID/getAllApplicationParameters/getRoles), each needing a System
+		 * pool connection that can block for the full pool lock wait. Holding a monitor on
+		 * this (process-wide) singleton across that would convoy every other cache miss in
+		 * the server behind it.
+		 */
+		TornadoApplication taNew = new TornadoApplication(m_pSystem, m_cacheDesign, sAppGroup, sAppName);
+		if(!taNew.appExists()) return taNew; //don't cache an app that doesn't exist
+
+		/*
+		 * Two threads can miss the cache for the same app and both construct one. Publish
+		 * atomically so the first writer wins, and shut down the loser rather than leaking
+		 * its pool manager's cleaner thread.
+		 */
+		TornadoApplication taExisting = m_htApplications.putIfAbsent(taNew.getApplicationKey(), taNew);
+		if(taExisting!=null)
+		{
+			taNew.closePools();
+			return taExisting;
+		}
+
+		return taNew;
 	}
 
 	/**
