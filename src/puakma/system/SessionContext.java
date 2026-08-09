@@ -297,70 +297,61 @@ public class SessionContext implements ErrorDetect,Cloneable
 		return pSession.getCookieString(sCookieName, sPath, sDomain, bIsSecure, bIsHttpOnly);
 	}
 
+	/*
+	 * These setters used to lock on the field they were about to overwrite, eg
+	 *     synchronized(pSession.firstName) { ...; pSession.firstName = szFirstName; }
+	 * which excluded nothing: the monitor was the old value, so once one thread assigned,
+	 * the next locked a different object and both ran the block concurrently. Worse, these
+	 * fields initialise to compile-time String constants ("", ANONYMOUS_USER, "Unknown"),
+	 * which are interned - so every not-yet-populated session in the server, and any other
+	 * code in the JVM locking an equal literal, contended on one shared monitor. Removing
+	 * the blocks drops a global bottleneck and loses no safety that ever existed.
+	 */
 	public void setFirstName(String szFirstName)
 	{
-		synchronized(pSession.firstName)
-		{
-			pSession.setObjectChanged();
-			pSession.firstName = szFirstName;
-		}
+		pSession.setObjectChanged();
+		pSession.firstName = szFirstName;
 	}
 
 	public void setLastName(String szLastName)
 	{
-		synchronized(pSession.lastName)
-		{
-			pSession.setObjectChanged();
-			pSession.lastName = szLastName;
-		}
+		pSession.setObjectChanged();
+		pSession.lastName = szLastName;
 	}
 
 	public void setUserName(String szUserName)
 	{
-		synchronized(pSession.userName)
-		{
-			pSession.setObjectChanged();
-			pSession.userName = szUserName;
-		}
+		pSession.setObjectChanged();
+		pSession.userName = szUserName;
 	}
 
 	public void setLoginName(String szLoginName)
 	{
-		synchronized(pSession.loginName)
-		{
-			pSession.setObjectChanged();
-			pSession.loginName = szLoginName;
-		}
+		pSession.setObjectChanged();
+		pSession.loginName = szLoginName;
 	}
 
 
 	public void setAuthenticatorUsed(String szAuthenticatorUsed)
 	{
 		if(szAuthenticatorUsed==null) szAuthenticatorUsed="";
-		synchronized(pSession.authenticatorUsed)
-		{
-			pSession.setObjectChanged();
-			pSession.authenticatorUsed = szAuthenticatorUsed;
-		}
+		pSession.setObjectChanged();
+		pSession.authenticatorUsed = szAuthenticatorUsed;
 	}
 
 
 	public void setUserAgent(String szUserAgent)
 	{
-		synchronized(pSession.userAgent)
-		{
-			pSession.setObjectChanged();
-			pSession.userAgent = szUserAgent;
-		}
+		pSession.setObjectChanged();
+		pSession.userAgent = szUserAgent;
 	}
 
+	//lastTransaction is a Date, not an interned String, so this one was not a global
+	//contention point - just a lock on the object being replaced, ie no exclusion at all.
 	public void setLastTransactionTime()
 	{
-		synchronized(pSession.lastTransaction)
-		{
-			pSession.setObjectChanged();
-			pSession.lastTransaction = new java.util.Date();
-		}
+		pSession.setObjectChanged();
+		pSession.lastTransaction = new java.util.Date();
 	}
 	
 	public void setTimeZone(TimeZone tz)

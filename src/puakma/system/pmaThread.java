@@ -97,12 +97,11 @@ public final class pmaThread extends Thread
 			}
 			else
 			{
-				synchronized(this) //lock for extra safety
-				{
-					m_bIsRunning = true;
-					m_target = paramtarget;
-					this.interrupt();
-				}
+				//no inner synchronized(this) block needed - this method is already
+				//synchronized on the same monitor and intrinsic locks are reentrant
+				m_bIsRunning = true;
+				m_target = paramtarget;
+				this.interrupt();
 			}
 		}
 		return true;
