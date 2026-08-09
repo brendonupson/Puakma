@@ -70,7 +70,7 @@ public class SystemContext implements ErrorDetect,Cloneable
 	private int m_iPoolConnectionTimeoutMS = CONN_TIMEOUT;
 	private int m_iPoolConnectionExpireSeconds = CONN_EXPIRY;
 	 */
-	/*public SystemContext(pmaSystem paramSystem, dbConnectionPoolManager paramDBPoolMgr)
+	/*public SystemContext(pmaSystem paramSystem, DbConnectionPoolManager paramDBPoolMgr)
 	{
 		init(paramSystem);
 		setDBPoolManager(paramDBPoolMgr);

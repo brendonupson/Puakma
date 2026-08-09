@@ -25,7 +25,7 @@ import puakma.addin.http.document.DesignElement;
 import puakma.addin.http.document.HTMLDocument;
 import puakma.error.ErrorDetect;
 import puakma.error.pmaLog;
-import puakma.jdbc.dbConnectionPoolManager;
+import puakma.jdbc.DbConnectionPoolManager;
 import puakma.pooler.Cache;
 import puakma.system.ActionRunnerInterface;
 import puakma.system.Document;
@@ -61,7 +61,7 @@ public class TornadoApplication implements ErrorDetect
 	private SystemContext m_pSystem;
 	private Cache m_cacheDesign; //passed in from the parent server instance
 
-	private dbConnectionPoolManager m_DBPoolMgr;
+	private DbConnectionPoolManager m_DBPoolMgr;
 	public final static int MAX_CONNECTIONS = 80;
 	public final static int CONN_TIMEOUT = 5000; //ms
 	public final static int CONN_EXPIRY = 60; //s was 1800s. 
@@ -96,7 +96,7 @@ public class TornadoApplication implements ErrorDetect
 		{
 			getAllApplicationParameters();
 			getRoles();
-			m_DBPoolMgr = new dbConnectionPoolManager(m_pSystem, getErrorSource());
+			m_DBPoolMgr = new DbConnectionPoolManager(m_pSystem, getErrorSource());
 		}
 		m_cacheDesign = cacheDesign;
 
