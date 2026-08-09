@@ -1411,10 +1411,22 @@ public class TornadoApplication implements ErrorDetect
 	}
 
 
+	/**
+	 * Shut down this application's connection pools and the pool manager's cleaner thread.
+	 * Call this when discarding a TornadoApplication that will never be used, eg the loser
+	 * of a race where two threads constructed the same application concurrently. finalize()
+	 * does the same thing but is deprecated for removal and is never guaranteed to run, so
+	 * relying on it to reclaim the cleaner thread leaks one per discarded instance.
+	 */
+	public void closePools()
+	{
+		if(m_DBPoolMgr!=null) m_DBPoolMgr.shutdown();
+	}
+
 	public void finalize()
 	{
 		//System.out.println("FINALIZE: TornadoApplication " + getErrorSource());
-		if(m_DBPoolMgr!=null) m_DBPoolMgr.shutdown();
+		closePools();
 	}
 
 	/**
