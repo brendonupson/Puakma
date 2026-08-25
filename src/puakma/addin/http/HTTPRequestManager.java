@@ -251,8 +251,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_HITSPERHOUR, 1);
 				m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_TOTALHITS, 1);
 				m_bSendSessionCookie=false;
+				m_bIsInErrorState = false; //reset
 				iCount++;
-				if(iCount==m_http_server.getMaxRequestsPerConnection()) m_bCloseConnection = true;
+				if(iCount>=m_http_server.getMaxRequestsPerConnection()) m_bCloseConnection = true;
 				//try to read the first line
 				try
 				{

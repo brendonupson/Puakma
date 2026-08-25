@@ -108,7 +108,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 				//System.out.println("encryp=["+szEncryptedPW+"]");
 				//System.out.println("stored=["+szStoredPassword+"]");
 				//we use startswith because the pw may be truncated in the DB
-				if(sEncryptedPW.startsWith(sStoredPassword)) //if password matches
+				if(sEncryptedPW!=null && sEncryptedPW.startsWith(sStoredPassword)) //if password matches
 				{
 					String sLoginFlag = rs.getString("LoginFlag");
 					if(sLoginFlag!=null && sLoginFlag.toUpperCase().indexOf('D')>=0)
