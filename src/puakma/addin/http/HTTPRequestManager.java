@@ -93,6 +93,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private static final String HTTP_NEWLINE = "\r\n";
 
 	private static final int STACKTRACE_DEPTH = -1;//20;
+	private static final int MIN_GZIP_SIZE_BYTES = 1024; // don't bother gzipping tiny replies
 	private static final String HTTP_VERSION="HTTP/1.1"; //all the other servers report 1.0 ?!
 	public static final String ACCESS_APP_ROLE = "AllowAccess";
 	public static final String ACCESS_WS_ROLE = "WebServiceAccess";
@@ -2067,7 +2068,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			}
 		}
 		String sEncoding = puakma.util.Util.getMIMELine(extra_headers, "Content-Encoding"); 
-		if(sEncoding==null && http_response_body!=null && http_response_body.length>0  && shouldGZipOutput(content_type) )
+		if(sEncoding==null && http_response_body!=null && http_response_body.length>=MIN_GZIP_SIZE_BYTES  && shouldGZipOutput(content_type) )
 		{
 			//m_pSystem.doDebug(0, "GZipping output for: " + m_http_request_line, this);
 			extra_headers.add("Content-Encoding: gzip");
