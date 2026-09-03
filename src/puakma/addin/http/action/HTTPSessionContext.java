@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -507,46 +508,51 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public void releaseDataConnection(long lAppID, Connection cx)
 	{
-		TornadoServerInstance tsi = TornadoServer.getInstance();
-		TornadoApplication ta = tsi.getTornadoApplication(lAppID);
-		if(ta.releaseDataConnection(cx)) 
-		{
-			m_htConnections.remove(cx);
-			//m_iDataConnReleaseCount++;
-			return;
-		}		
+		doReleaseDataConnection(cx, lAppID);
 	}
 	/**
-	 * Unlocks a database connection. 
+	 * Unlocks a database connection.
 	 * @param cx the connection object to put back into the database pool
 	 */
 	public void releaseDataConnection(Connection cx)
-	{		
+	{
+		doReleaseDataConnection(cx, -1);
+	}
+
+	/**
+	 * Attempts to return cx to its owning application's pool, trying the given appid
+	 * (or the session's current application if lAppID<0) first, then falling back to
+	 * every other loaded application. Returns whether the release actually succeeded,
+	 * so finalize() can tell a genuine leak from a connection it is cleaning up itself.
+	 * The public releaseDataConnection() overloads stay void for binary compatibility
+	 * with already-compiled app classes.
+	 */
+	private boolean doReleaseDataConnection(Connection cx, long lAppID)
+	{
 		TornadoServerInstance tsi = TornadoServer.getInstance();
-		TornadoApplication ta = tsi.getTornadoApplication(m_rPath.getPathToApplication());		
-		if(ta.releaseDataConnection(cx)) 
+		TornadoApplication ta = (lAppID>=0) ? tsi.getTornadoApplication(lAppID) : tsi.getTornadoApplication(m_rPath.getPathToApplication());
+		if(ta!=null && ta.releaseDataConnection(cx))
 		{
 			m_htConnections.remove(cx);
 			//m_iDataConnReleaseCount++;
-			return;
+			return true;
 		}
 
-
-		//Release by appid		
+		//Release by trying every other loaded application's pool
 		Hashtable htApp = tsi.getAllLoadedApplications();
 		Iterator it = htApp.values().iterator();
 		while(it.hasNext())
 		{
 			ta = (TornadoApplication) it.next();
-			if(ta.releaseDataConnection(cx)) 
+			if(ta.releaseDataConnection(cx))
 			{
 				m_htConnections.remove(cx);
 				//m_iDataConnReleaseCount++;
-				return;
+				return true;
 			}
 		}
 
-		return;
+		return false;
 	}
 
 	/**
@@ -1251,9 +1257,13 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public void finalize()
 	{
-		StringBuilder sbDBNames = new StringBuilder(m_htConnections.size()*20);
 		if(m_htConnections.size()>0)
 		{
+			//an entry is only ever still here because the app that acquired it never
+			//called releaseDataConnection() itself (a successful explicit release
+			//removes the entry immediately) - so this is a genuine badly-behaved-app
+			//signal, independent of whether our own cleanup below succeeds.
+			StringBuilder sbDBNames = new StringBuilder(m_htConnections.size()*20);
 			int iOpenConnections = m_htConnections.size();
 			//force them all to be cleared....
 			Enumeration<Connection> en = m_htConnections.keys();
@@ -1262,17 +1272,19 @@ public class HTTPSessionContext implements ErrorDetect
 				Connection cx = (Connection)en.nextElement();
 				try
 				{
-					String sDBName = cx.getMetaData().getDatabaseProductName();
-					if(sDBName.length()>0) 
+					DatabaseMetaData dbmd = cx.getMetaData();
+					String sDbUrl = dbmd.getURL();
+					//String sDBProduct = dbmd.getDatabaseProductName();
+					if(sDbUrl.length()>0 && !sbDBNames.toString().contains(sDbUrl))
 					{
 						if(sbDBNames.length()>0) sbDBNames.append(',');
-						sbDBNames.append(sDBName);
+						sbDBNames.append(sDbUrl);
 					}
 				}catch(Exception e){}
-				releaseDataConnection(cx);
+				doReleaseDataConnection(cx, -1);
 				m_htConnections.remove(cx);
 			}
-			m_SysCtx.doError("pmaSystem.ReleaseConnection", new String[]{""+iOpenConnections, sbDBNames.toString()}, this);
+			m_SysCtx.doError("pmaSystem.ReleaseConnection", new String[]{ String.valueOf(iOpenConnections), sbDBNames.toString()}, this);
 		}
 	}
 
