@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.1.5";
-	private final int PUAKMA_BUILD=1130;
-	private final String PUAKMA_BUILD_DATE="9 Aug 2026";
+	private final String PUAKMA_VERSION="6.1.8";
+	private final int PUAKMA_BUILD=1135;
+	private final String PUAKMA_BUILD_DATE="3 Sep 2026";
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
@@ -1488,17 +1488,27 @@ public class pmaSystem implements ErrorDetect
 	}
 
 	public void releaseSystemConnection(Connection cx)
-	{    
+	{
 		if(cx==null) return;
 		try
 		{
 			m_DBPoolMgr.releaseConnection(SystemContext.DBALIAS_SYSTEM, cx);
-			m_iSystemConnReleaseCount++;		      
+			m_iSystemConnReleaseCount++;
 		}
 		catch(Exception e)
 		{
 			pErr.doError("releaseSystemConnection() " + e.toString(), this);
 		}
+	}
+
+	/**
+	 * Non-destructive check: is cx currently a member of the system connection pool?
+	 * Use this before releaseSystemConnection() if you need to know whether the release
+	 * will actually match a pooled connection.
+	 */
+	public boolean isSystemConnection(Connection cx)
+	{
+		return m_DBPoolMgr.hasConnection(SystemContext.DBALIAS_SYSTEM, cx);
 	}
 
 	protected void resetConnectionChecker()

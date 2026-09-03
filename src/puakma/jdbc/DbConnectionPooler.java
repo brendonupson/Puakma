@@ -208,18 +208,19 @@ public class DbConnectionPooler extends BasePooler implements ErrorDetect
 
 	public synchronized void doExpire()
 	{
-		for(int i=0; i<m_vPool.size(); i++)
+		//iterate backward so removing a slot doesn't skip the item shifted into it
+		for(int i=m_vPool.size()-1; i>-1; i--)
 		{
-			PooledItem pi = (PooledItem)m_vPool.elementAt(i);			
+			PooledItem pi = (PooledItem)m_vPool.elementAt(i);
 			if(pi!=null)
 			{
-				if(doExpire(pi, false)) 
-				{		
+				if(doExpire(pi, false))
+				{
 					m_vPool.removeElementAt(i);
 					//System.out.println("item expired... " + pi.toString());
 				}
 			}
-		}		
+		}
 	}
 
 	//...........................................................................
