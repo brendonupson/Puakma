@@ -371,12 +371,22 @@ public class SystemContext implements ErrorDetect,Cloneable
 	 * @param cx
 	 */
 	public void releaseSystemConnection(Connection cx)
-	{    
+	{
 		if(cx==null) return;
-		
+
 		m_htConnections.remove(cx);
 		m_iSystemConnReleaseCount++;
 		m_pSystem.releaseSystemConnection(cx);
+	}
+
+	/**
+	 * Non-destructive check: is cx currently a member of the system connection pool?
+	 * Use this before releaseSystemConnection() if you need to know whether the release
+	 * will actually match a pooled connection.
+	 */
+	public boolean isSystemConnection(Connection cx)
+	{
+		return m_pSystem.isSystemConnection(cx);
 	}
 
 	/**

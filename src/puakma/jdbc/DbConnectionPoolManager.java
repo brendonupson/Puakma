@@ -227,6 +227,9 @@ public class DbConnectionPoolManager implements ErrorDetect
 	/**
 	 * NOT synchronized - see the note on getConnection(). A release must never be able to
 	 * queue behind a thread that is waiting for a connection.
+	 * A foreign Connection (not a member of this pool) is left untouched rather than
+	 * blindly committed/cleared - use hasConnection() first if you need to know whether
+	 * cnx actually belongs to this pool.
 	 */
 	public void releaseConnection( String sAlias, Connection cnx ) throws Exception
 	{
@@ -234,7 +237,20 @@ public class DbConnectionPoolManager implements ErrorDetect
 		DbConnectionPooler pooler = m_map.get( s );
 		if ( pooler == null )
 			throw new Exception( "Error releaseConnection(). Alias: " + sAlias + " has not been registered." );
-		pooler.releaseConnection( cnx );
+		if ( pooler.hasItem( cnx ) )
+			pooler.releaseConnection( cnx );
+	}
+
+	/**
+	 * Non-destructive check: does cnx currently belong to the pool registered under sAlias?
+	 * NOT synchronized - see the note on getConnection().
+	 */
+	public boolean hasConnection( String sAlias, Connection cnx )
+	{
+		if(sAlias==null || cnx==null) return false;
+		String s = sAlias.trim().toLowerCase();
+		DbConnectionPooler pooler = m_map.get( s );
+		return pooler!=null && pooler.hasItem( cnx );
 	}
 
 

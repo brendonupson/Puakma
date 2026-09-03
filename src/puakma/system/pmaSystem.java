@@ -1488,17 +1488,27 @@ public class pmaSystem implements ErrorDetect
 	}
 
 	public void releaseSystemConnection(Connection cx)
-	{    
+	{
 		if(cx==null) return;
 		try
 		{
 			m_DBPoolMgr.releaseConnection(SystemContext.DBALIAS_SYSTEM, cx);
-			m_iSystemConnReleaseCount++;		      
+			m_iSystemConnReleaseCount++;
 		}
 		catch(Exception e)
 		{
 			pErr.doError("releaseSystemConnection() " + e.toString(), this);
 		}
+	}
+
+	/**
+	 * Non-destructive check: is cx currently a member of the system connection pool?
+	 * Use this before releaseSystemConnection() if you need to know whether the release
+	 * will actually match a pooled connection.
+	 */
+	public boolean isSystemConnection(Connection cx)
+	{
+		return m_DBPoolMgr.hasConnection(SystemContext.DBALIAS_SYSTEM, cx);
 	}
 
 	protected void resetConnectionChecker()

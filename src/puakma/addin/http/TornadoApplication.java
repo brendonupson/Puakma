@@ -1271,7 +1271,12 @@ public class TornadoApplication implements ErrorDetect
 				bReturn = true;
 			}
 			else
+			{
+				//check membership before releasing - releaseSystemConnection() stays void
+				//for binary compatibility with already-compiled app classes
+				bReturn = m_pSystem.isSystemConnection(cx);
 				m_pSystem.releaseSystemConnection(cx);
+			}
 		}
 		catch(Exception e)
 		{
