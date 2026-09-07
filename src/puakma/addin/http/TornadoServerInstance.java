@@ -183,12 +183,18 @@ public class TornadoServerInstance
 	}
 
 	/**
-	 * 
+	 * Returns a point-in-time snapshot of the loaded applications table.
+	 * A copy is returned (rather than the live table) so callers can safely
+	 * iterate it without risking a ConcurrentModificationException if another
+	 * thread loads or unloads an application while the iteration is in progress.
 	 * @return
 	 */
 	public Hashtable<String, TornadoApplication> getAllLoadedApplications()
 	{
-		return m_htApplications;
+		synchronized(m_htApplications)
+		{
+			return new Hashtable<String, TornadoApplication>(m_htApplications);
+		}
 	}
 
 	public String toString()
