@@ -565,6 +565,7 @@ public class HTMLView
 		sJumpTo = sJumpTo.toUpperCase();
 		StringBuilder sb = TableManager.getHeaderXML(m_tm.getDefaultProtocol(), m_tm.getDefaultHost(), m_doc.rPath.getPathToApplication());
 		Connection cx = null;
+		boolean bSystemConnection = m_sConnName!=null && m_sConnName.equals(SystemContext.DBALIAS_SYSTEM);
 		long lOutput=0;
 		int iPos = m_sSQL.toUpperCase().indexOf(SQL_ORDER_BY);
 		String sSortField = "";
@@ -580,7 +581,10 @@ public class HTMLView
 		//System.out.println("sort="+sSortField);
 		try
 		{
-			cx = m_pSession.getDataConnection(m_sConnName);			
+			if(bSystemConnection)
+				cx = m_pSession.getSystemContext().getSystemConnection();
+			else
+				cx = m_pSession.getDataConnection(m_sConnName);
 			stmt = cx.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			rs = stmt.executeQuery(m_sSQL);
 			while(rs.next())
@@ -637,7 +641,10 @@ public class HTMLView
 		{
 			Util.closeJDBC(rs);
 			Util.closeJDBC(stmt);
-			m_pSession.releaseDataConnection(cx);
+			if(bSystemConnection)
+				m_pSession.getSystemContext().releaseSystemConnection(cx);
+			else
+				m_pSession.releaseDataConnection(cx);
 		}
 
 		TableManager.addTrailerXML(sb);
