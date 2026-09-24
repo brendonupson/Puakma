@@ -41,6 +41,9 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.Vector;
 
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+
 import puakma.addin.pmaAddInStatusLine;
 import puakma.addin.http.action.ActionReturn;
 import puakma.addin.http.action.HTTPSessionContext;
@@ -191,8 +194,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(m_bSecure) m_sHTTPURLPrefix="https";
 		try{ m_iHTTPPort = m_sock.getLocalPort(); } catch(Exception e){}
 		m_iConnectionsLeft = m_http_server.getMaxRequestsPerConnection();
-		m_iKeepAliveTimeoutSeconds = (m_http_server.iHTTPPortTimeout/1000);
-		if(m_iKeepAliveTimeoutSeconds<=0) m_iKeepAliveTimeoutSeconds=60;      
+		//advertised in the Keep-Alive header, and enforced in run() while waiting for the next request
+		m_iKeepAliveTimeoutSeconds = Math.max(1, m_http_server.iHTTPKeepAliveTimeout/1000);
 
 		m_sSystemHostName = szHostName;
 		m_bAllowByteRangeServing = m_http_server.serverAllowsByteServing();
@@ -240,7 +243,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		m_pStatus = m_http_server.createStatusLine(' ' + "HTTPreq");
 		m_pStatus.setStatus("Processing request #" + request_id + " from " + m_sock.getInetAddress().getHostAddress());
 		// if setup m_is successful, hand it off
-		if (doSetup())
+		if (doTLSHandshake() && doSetup())
 		{                
 			//reset the socket timeout as we try to read more headers
 			try{ m_sock.setSoTimeout(m_http_server.iHTTPPortTimeout); }catch(Exception e){}
@@ -258,7 +261,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				//try to read the first line
 				try
 				{
+					//on a reused (keep-alive) connection, only hold this worker thread for the short
+					//keep-alive timeout while the client is idle. Once the request line arrives,
+					//restore the normal timeout for reading the rest of the request.
+					if(iCount>1) m_sock.setSoTimeout(m_http_server.iHTTPKeepAliveTimeout);
 					m_http_request_line = m_is.readLine();
+					if(iCount>1) m_sock.setSoTimeout(m_http_server.iHTTPPortTimeout);
 					if(m_http_request_line==null || m_http_request_line.length()==0 || !m_pSystem.isSystemRunning()) break;
 				}
 				catch(Exception g) { break; }
@@ -300,6 +308,39 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(m_pStatus!=null) m_http_server.removeStatusLine(m_pStatus);
 	}
 
+
+	/**
+	 * When the trust store is enabled, complete the TLS handshake (requesting a client certificate)
+	 * and record the client principal. Runs on this worker thread, not the accept thread, and is
+	 * bounded by the port timeout so a silent client cannot hold the thread indefinitely.
+	 * @return false if the handshake failed, in which case the socket has been closed
+	 */
+	private boolean doTLSHandshake()
+	{
+		if(!m_bSecure || !m_http_server.isTrustStoreEnabled() || !(m_sock instanceof SSLSocket)) return true;
+
+		SSLSocket sslSock = (SSLSocket)m_sock;
+		try
+		{
+			sslSock.setSoTimeout(m_http_server.iHTTPPortTimeout);
+			sslSock.setUseClientMode(false);
+			sslSock.setWantClientAuth(true);
+			sslSock.setEnableSessionCreation(true);
+			sslSock.startHandshake(); //getSession() swallows handshake failures, this throws them
+			SSLSession sess = sslSock.getSession();
+			//getPeerPrincipal() throws if the client presented no certificate. As before this was
+			//moved off the accept thread, such a client is not served. To make client certificates
+			//optional instead, catch SSLPeerUnverifiedException here and carry on without a principal.
+			if(sess!=null && sess.isValid()) setSessionPrincipal(sess.getPeerPrincipal());
+			return true;
+		}
+		catch(Exception e)
+		{
+			m_pSystem.doDebug(pmaLog.DEBUGLEVEL_STANDARD, "TLS handshake failed: %s", new String[]{e.toString()}, this);
+			try{ m_sock.close(); }catch(Exception c){}
+			return false;
+		}
+	}
 
 	/**
 	 * Sets up the request
@@ -1828,27 +1869,38 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			//assume the smaller files may be css/js/jpg etc so can be compressed
 			if(fToServe.length()<204800) //less than 200Kb
 			{            
-				fin = new FileInputStream(fToServe);
-				byte buf[] = new byte[(int)fToServe.length()];
-				byte smallbuf[] = new byte[102400];
-				int iRead = fin.read(smallbuf);
-				int iCopyPos = 0;
-				while(iRead>0)
-				{                  
-					System.arraycopy(smallbuf, 0, buf, iCopyPos, iRead);
-					iCopyPos += iRead;
-					iRead = fin.read(smallbuf);
-				}
-
-				//m_pSystem.doDebug(0, "pre-minify " + "[" + sMimeType + "] " + fToServe.getName(), this);
-				if(m_http_server.shouldMinifyFileSystemJS() && 
-						sMimeType!=null && 
-						sMimeType.equalsIgnoreCase("text/javascript")) 
+				//whether this client gets it gzipped decides which cached variant to use
+				boolean bClientGZip = puakma.util.Util.getMIMELine(extra_headers, "Content-Encoding")==null && shouldGZipOutput(sMimeType);
+				String sCacheKey = fToServe.getAbsolutePath() + '|' + fToServe.lastModified() + '|' + fToServe.length() + '|' + bClientGZip;
+				puakma.pooler.Cache cache = m_http_server.getStaticFileCache();
+				StaticFileCacheItem item = cache==null ? null : (StaticFileCacheItem)cache.getItem(sCacheKey);
+				if(item==null)
 				{
-					buf = Util.minifyJSCode(buf);					
+					fin = new FileInputStream(fToServe);
+					byte buf[] = new byte[(int)fToServe.length()];
+					byte smallbuf[] = new byte[102400];
+					int iRead = fin.read(smallbuf);
+					int iCopyPos = 0;
+					while(iRead>0)
+					{                  
+						System.arraycopy(smallbuf, 0, buf, iCopyPos, iRead);
+						iCopyPos += iRead;
+						iRead = fin.read(smallbuf);
+					}
+
+					//m_pSystem.doDebug(0, "pre-minify " + "[" + sMimeType + "] " + fToServe.getName(), this);
+					if(m_http_server.shouldMinifyFileSystemJS() && 
+							sMimeType!=null && 
+							sMimeType.equalsIgnoreCase("text/javascript")) 
+					{
+						buf = Util.minifyJSCode(buf);					
+					}
+					item = makeStaticFileCacheItem(sCacheKey, buf, bClientGZip);
+					if(cache!=null) cache.addItem(item);
 				}
-				sendHTTPResponse(iErrCode, sReply, extra_headers, HTTP_VERSION,
-						sMimeType, buf);
+				if(item.isGZipped()) extra_headers.add("Content-Encoding: gzip");
+				sendPreparedHTTPResponse(iErrCode, sReply, extra_headers, HTTP_VERSION,
+						sMimeType, item.getBody(), item.getETag());
 
 			}
 			else
@@ -2081,9 +2133,45 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		//generate an ETag header by using md5 of page
 		//this will ensure identical content pages are the same
+		String sETag = null;
 		if(http_code>=200 && http_code<300 && m_http_server.shouldGenerateETags())
+			sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(http_response_body));
+
+		sendPreparedHTTPResponse(http_code, http_code_string, extra_headers, http_version, content_type, http_response_body, sETag);
+	}
+
+	/**
+	 * Builds the cacheable form of a small static file: gzipped if the client accepts it and
+	 * it is worth compressing, plus its ETag. Mirrors what sendHTTPResponse() does per request.
+	 */
+	private StaticFileCacheItem makeStaticFileCacheItem(String sKey, byte[] buf, boolean bClientGZip)
+	{
+		boolean bGZipped = false;
+		if(bClientGZip && buf!=null && buf.length>=MIN_GZIP_SIZE_BYTES)
 		{
-			String sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(http_response_body));
+			byte[] bufGZip = puakma.util.Util.gzipBuffer(buf);
+			if(bufGZip!=null)
+			{
+				buf = bufGZip;
+				bGZipped = true;
+			}
+		}
+		String sETag = null;
+		if(m_http_server.shouldGenerateETags())
+			sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(buf));
+		return new StaticFileCacheItem(sKey, buf, bGZipped, sETag);
+	}
+
+	/**
+	 * Sends a response whose body is already in its final form (any gzip already applied).
+	 * @param sETag the body's ETag, or null for none. Only sent for 2xx responses.
+	 */
+	private void sendPreparedHTTPResponse(int http_code, String http_code_string,
+			ArrayList<String> extra_headers, String http_version,
+			String content_type, byte[] http_response_body, String sETag)
+	{
+		if(sETag!=null && http_code>=200 && http_code<300)
+		{
 			//System.out.println(sETag.length() + " bytes :"+sETag);
 			extra_headers.add("ETag: \""+sETag+'\"');
 			extra_headers.add("Vary: ETag");
@@ -2415,8 +2503,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		else
 			stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession.getSessionContext());
 		 */
-		HTTPLogEntry stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession==null ? null : m_pSession.getSessionContext());
-		m_http_server.writeStatLog(stat, m_sInboundPath, m_sInboundMethod, m_iInboundSize);		
+		if(m_http_server.isStatLogEnabled()) //don't build the log entry if nothing will write it
+		{
+			HTTPLogEntry stat = new HTTPLogEntry(m_http_server.getMimeExcludes(), m_environment_lines, out_lines, m_http_request_line, content_type, lStreamLengthBytes, (long)m_iInboundSize, http_code, m_sClientIPAddress, m_sClientHostName, m_sSystemHostName, m_sRequestedHost, lTransMS, m_sock.getLocalAddress().getHostAddress(), m_iHTTPPort, m_pSession==null ? null : m_pSession.getSessionContext());
+			m_http_server.writeStatLog(stat, m_sInboundPath, m_sInboundMethod, m_iInboundSize);		
+		}
 		m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_BYTESINPERHOUR, m_iInboundSize);
 		m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_TOTALBYTESIN, m_iInboundSize);
 	}
@@ -2652,7 +2743,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		try
 		{
-			m_is.close();
+			if(m_is!=null) m_is.close();
 		}
 		catch(IOException io1)
 		{
@@ -2661,7 +2752,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		try
 		{
-			m_os.close();
+			if(m_os!=null) m_os.close();
 		}
 		catch(IOException io2)
 		{

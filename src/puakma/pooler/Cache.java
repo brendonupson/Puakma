@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 package puakma.pooler;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * This is a thread aware cache.
@@ -36,9 +37,12 @@ public class Cache implements CacheableItem
 	private Hashtable<String, CacheableItem> m_htItems = new Hashtable<String, CacheableItem>();
 	//private double m_dSize=0; cache elements may grow in size!!
 	private double m_dMaxSize=-1;
-	private double m_dCacheHits=0;
-	private double m_dCacheMisses=0;
+	private final AtomicLong m_lCacheHits = new AtomicLong();
+	private final AtomicLong m_lCacheMisses = new AtomicLong();
 	private long m_lCacheExpiryTime=1800000L; //30minutes
+	//getItem()/addItem() used to scan the whole cache on every call. Only sweep this often.
+	private static final long EXPIRE_SWEEP_INTERVAL_MS = 5000;
+	private final AtomicLong m_lLastExpireSweep = new AtomicLong();
 	private String m_sCacheKey=null;
 
 
@@ -84,7 +88,7 @@ public class Cache implements CacheableItem
 	 */
 	public boolean addItem(Object oItem)
 	{
-		expireAll(m_lCacheExpiryTime);
+		expireIfDue();
 
 		if(!(oItem instanceof CacheableItem)) return false;
 		/*try{ ciItem = (CacheableItem)oItem; }
@@ -147,20 +151,32 @@ public class Cache implements CacheableItem
 		}
 	}
 
-	public synchronized void resetCounters()
+	/**
+	 * Run the periodic expiry sweep if one hasn't run in the last EXPIRE_SWEEP_INTERVAL_MS.
+	 * Only one thread wins the CAS, so concurrent callers don't all scan the cache.
+	 */
+	private void expireIfDue()
 	{
-		m_dCacheMisses=0;
-		m_dCacheHits=0;    
+		long lNow = System.currentTimeMillis();
+		long lLast = m_lLastExpireSweep.get();
+		if(lNow-lLast < EXPIRE_SWEEP_INTERVAL_MS) return;
+		if(m_lLastExpireSweep.compareAndSet(lLast, lNow)) expireAll(m_lCacheExpiryTime);
 	}
 
-	private synchronized void logCacheMiss()
+	public void resetCounters()
 	{
-		m_dCacheMisses++;
+		m_lCacheMisses.set(0);
+		m_lCacheHits.set(0);
 	}
 
-	private synchronized void logCacheHit()
+	private void logCacheMiss()
 	{
-		m_dCacheHits++;
+		m_lCacheMisses.incrementAndGet();
+	}
+
+	private void logCacheHit()
+	{
+		m_lCacheHits.incrementAndGet();
 	}
 
 
@@ -173,9 +189,15 @@ public class Cache implements CacheableItem
 		if(szKey==null) return null;
 
 		Object oItem=null;
-		expireAll(m_lCacheExpiryTime); //make some room
+		expireIfDue(); //make some room
 		//System.out.println("["+szKey+"]");
 		oItem = m_htItems.get(szKey);
+		//the full sweep is throttled, so check this item's own expiry to never return a stale one
+		if(oItem!=null && ((CacheableItem)oItem).itemHasExpired(m_lCacheExpiryTime))
+		{
+			removeItem(szKey);
+			oItem = null;
+		}
 		if(oItem==null)
 		{
 			logCacheMiss();            
@@ -216,7 +238,7 @@ public class Cache implements CacheableItem
 			sb.append("\r\n");
 		}
 
-		sb.append(iCount + " elements " +(long)getCacheSize()/1024 + "KB. hits=" + (long)m_dCacheHits + " misses=" + (long)m_dCacheMisses + "\r\n");
+		sb.append(iCount + " elements " +(long)getCacheSize()/1024 + "KB. hits=" + m_lCacheHits.get() + " misses=" + m_lCacheMisses.get() + "\r\n");
 		return sb.toString();
 	}
 
@@ -231,7 +253,7 @@ public class Cache implements CacheableItem
 
 	public double getCacheHits()
 	{
-		return m_dCacheHits;
+		return m_lCacheHits.get();
 	}
 
 	/**
@@ -257,12 +279,12 @@ public class Cache implements CacheableItem
 
 	public double getCacheMisses()
 	{
-		return m_dCacheMisses;
+		return m_lCacheMisses.get();
 	}
 
 	public double getCacheAccesses()
 	{
-		return m_dCacheMisses+m_dCacheHits;
+		return m_lCacheMisses.get()+m_lCacheHits.get();
 	}
 
 	public int getItemCount()

@@ -54,6 +54,9 @@ public class SharedActionClassLoader extends ClassLoader
 	private SystemContext m_pSystem;
 	private Hashtable<String, ClassCacheEntry> m_cache=new Hashtable<String, ClassCacheEntry>(30);
 	private Hashtable<String, String> m_loadedDesigns=new Hashtable<String, String>(30);  
+	//lower case design element name -> the first class loaded from it. Saves scanning m_cache
+	//on every request when the design name differs from the class name
+	private Hashtable<String, String> m_htDesignToClass=new Hashtable<String, String>(30);
 	//private int m_iTypeToLoad = 0;
 	private Vector<File> m_vJars = new Vector<File>(); //all File objects for jar files
 
@@ -206,6 +209,9 @@ public class SharedActionClassLoader extends ClassLoader
 			ClassCacheEntry cache_entry = (ClassCacheEntry)m_cache.get(sDesignActionName);
 			return cache_entry.m_sClassName;
 		}
+
+		String sClassName = m_htDesignToClass.get(sDesignActionName.toLowerCase());
+		if(sClassName!=null) return sClassName;
 
 		Enumeration<ClassCacheEntry> en = m_cache.elements();
 		while(en.hasMoreElements())
@@ -416,6 +422,7 @@ public class SharedActionClassLoader extends ClassLoader
 			c.m_sDesignName = szDesignName;
 			c.m_sClassName = szClassName;
 			m_cache.put(szClassName, c);
+			if(szDesignName!=null) m_htDesignToClass.putIfAbsent(szDesignName.toLowerCase(), szClassName);
 			//if(m_ActionClass==null) m_ActionClass = szClassName;
 		}
 	}

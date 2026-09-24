@@ -28,12 +28,14 @@ package puakma.system;
  */
 public final class pmaThread extends Thread
 {
-	private boolean m_bIsRunning=false;
-	private boolean m_bThreadActive=true;
+	//volatile: read by the pool manager's thread to find a free worker
+	private volatile boolean m_bIsRunning=false;
+	private volatile boolean m_bThreadActive=true;
 	private long m_lastRunTimeMS=0;
 	private long m_executionCount=0; //the number of times the thread has 'worked'
 	private double m_totalExecutionTime=0;
-	private pmaThreadInterface m_target=null;
+	private volatile pmaThreadInterface m_target=null;
+	private pmaThreadPoolManager m_manager=null; //told when this thread becomes free
 
 	public pmaThread()
 	{
@@ -43,6 +45,12 @@ public final class pmaThread extends Thread
 	public pmaThread(String sThreadName)
 	{
 		super(sThreadName);
+	}
+
+	public pmaThread(String sThreadName, pmaThreadPoolManager manager)
+	{
+		super(sThreadName);
+		m_manager = manager;
 	}
 
 	public Object getObject()
@@ -128,6 +136,7 @@ public final class pmaThread extends Thread
 				m_lastRunTimeMS = lEnd - lStart;
 				m_totalExecutionTime += m_lastRunTimeMS;
 				m_bIsRunning = false;
+				if(m_manager!=null) m_manager.threadFinished();
 				//System.out.println(this.toString() + " end. " + getLastRunTime() + "ms");
 			}
 			//sleep for a really long time. We will interrupt it if we have more work to do later...

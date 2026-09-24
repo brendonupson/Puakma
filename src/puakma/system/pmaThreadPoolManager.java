@@ -111,16 +111,30 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 				//apparently .yield() can have unpredictable results across platforms
 				//try{Thread.sleep(1);}catch(Exception w){}
 			}
-			try{Thread.sleep(200);}catch(Exception w){}
-
-			// if we waited the whole time bail.
-			if( ((System.currentTimeMillis() - ltime) > m_iThreadWaitTimeMS) && m_iThreadWaitTimeMS>=0) break;
+			//wait for a worker to finish (threadFinished() notifies) rather than polling.
+			//The timed wait is kept as a safety net in case a notify is missed.
+			long lWait = 200;
+			if(m_iThreadWaitTimeMS>=0)
+			{
+				long lRemaining = m_iThreadWaitTimeMS - (System.currentTimeMillis() - ltime);
+				if(lRemaining<=0) break;
+				if(lRemaining<lWait) lWait = lRemaining;
+			}
+			try{ wait(lWait); }catch(InterruptedException w){}
 		} //while
 
 		m_pSystem.doError("pmaThreadPoolManager.NoFreeThreads", new String[]{String.valueOf(m_iThreadWaitTimeMS), String.valueOf(m_iCurrentThreadCount)}, this);
 		return null;
 	}
 
+
+	/**
+	 * Called by a pmaThread when it finishes its work, to wake a caller waiting in getNextThread()
+	 */
+	public synchronized void threadFinished()
+	{
+		notifyAll();
+	}
 
 	public boolean runThread(pmaThreadInterface paramtarget)
 	{
@@ -241,7 +255,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	private pmaThread createThread()
 	{
 		m_iCurrentThreadCount++;
-		pmaThread t = new pmaThread(m_sThreadPrefix+"-" + m_lThreadNum++);
+		pmaThread t = new pmaThread(m_sThreadPrefix+"-" + m_lThreadNum++, this);
 		m_vThreads.add(t);
 		t.start();
 		//System.out.println("## NEW THREAD: " + t.toString());

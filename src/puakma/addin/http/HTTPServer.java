@@ -26,19 +26,18 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.KeyStore;
-import java.security.Principal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.DoubleAdder;
 
 import javax.net.ServerSocketFactory;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 
@@ -48,6 +47,7 @@ import puakma.addin.http.document.DesignElement;
 import puakma.addin.http.log.HTTPLogEntry;
 import puakma.error.ErrorDetect;
 import puakma.error.pmaLog;
+import puakma.pooler.Cache;
 import puakma.system.RequestPath;
 import puakma.system.SessionContext;
 import puakma.system.SystemContext;
@@ -82,6 +82,8 @@ public class HTTPServer extends Thread implements ErrorDetect
 	public String HTTP_PublicDir;
 	public String m_sHTTPMaxSessionRedirect="";
 	public int iHTTPPortTimeout=30000; //30 seconds
+	//how long an idle keep-alive connection may hold a worker thread waiting for its next request
+	public int iHTTPKeepAliveTimeout=3000;
 	private int m_iHTTPPort=-1;
 	public Properties propMime= new Properties();
 	//allow anonymous access to the public directory
@@ -89,7 +91,12 @@ public class HTTPServer extends Thread implements ErrorDetect
 	private pmaAddInStatusLine pStatus;
 	private SystemContext m_pSystem;
 
-	private double m_dblBytesServed=0;
+	//DoubleAdder: updated by every worker thread on every chunk written, so no lock
+	private final DoubleAdder m_dblBytesServed = new DoubleAdder();
+	private final AtomicLong m_lLastStatusUpdate = new AtomicLong();
+	private static final long STATUS_UPDATE_INTERVAL_MS = 1000;
+	//processed (minified/gzipped) small static files, see HTTPRequestManager.serveFile()
+	private Cache m_cacheStaticFiles;
 	private boolean m_bLogToRDB=false;
 	private boolean m_bLogToFile=false;
 	public boolean m_bLogInbound=false;
@@ -220,6 +227,14 @@ public class HTTPServer extends Thread implements ErrorDetect
 		catch(Exception r){}
 		try{ m_iHTTPMaxPerConnection = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxPerConnection")); }
 		catch(Exception r){}
+		try{ iHTTPKeepAliveTimeout = Integer.parseInt(m_pSystem.getSystemProperty("HTTPKeepAliveTimeout")); }
+		catch(Exception r){}
+		if(iHTTPKeepAliveTimeout<=0) iHTTPKeepAliveTimeout = 3000;
+
+		double dStaticCacheMB = 16;
+		try{ dStaticCacheMB = Double.parseDouble(m_pSystem.getSystemProperty("HTTPStaticCacheMB")); }
+		catch(Exception r){}
+		if(dStaticCacheMB>0) m_cacheStaticFiles = new Cache(dStaticCacheMB*1024*1024);
 
 		try{ m_iMaxURI = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxURI")); }
 		catch(Exception r){}
@@ -302,12 +317,15 @@ public class HTTPServer extends Thread implements ErrorDetect
 	/**
 	 *
 	 */
-	private void updateStatusLine()
+	private synchronized void updateStatusLine()
 	{
+		//synchronized: the NumberFormats are not thread safe. Callers other than the accept
+		//loop are throttled to once a second, so this lock is rarely contended.
+		m_lLastStatusUpdate.set(System.currentTimeMillis());
 		if(m_sInterface==null)
-			pStatus.setStatus("Listening. hits:" + m_nfWhole.format(request_id) + " avg:" + m_nfWhole.format(m_tpm.getAverageExecutionTime()) + "ms " + m_nfMB.format(m_dblBytesServed/1024/1024) + "mb");
+			pStatus.setStatus("Listening. hits:" + m_nfWhole.format(request_id) + " avg:" + m_nfWhole.format(m_tpm.getAverageExecutionTime()) + "ms " + m_nfMB.format(m_dblBytesServed.sum()/1024/1024) + "mb");
 		else
-			pStatus.setStatus("Listening " + m_sInterface + ". hits:" + m_nfWhole.format(request_id) + " avg:" + m_nfWhole.format(m_tpm.getAverageExecutionTime()) + "ms " + m_nfMB.format(m_dblBytesServed/1024/1024) + "mb");
+			pStatus.setStatus("Listening " + m_sInterface + ". hits:" + m_nfWhole.format(request_id) + " avg:" + m_nfWhole.format(m_tpm.getAverageExecutionTime()) + "ms " + m_nfMB.format(m_dblBytesServed.sum()/1024/1024) + "mb");
 	}
 
 	public boolean serverAllowsByteServing()
@@ -329,10 +347,36 @@ public class HTTPServer extends Thread implements ErrorDetect
 	/**
 	 * record how many bytes the server has served
 	 */
-	public synchronized void updateBytesServed(int iAddBytes)
+	public void updateBytesServed(int iAddBytes)
 	{
-		m_dblBytesServed += iAddBytes;
-		updateStatusLine();
+		m_dblBytesServed.add(iAddBytes);
+		long lLast = m_lLastStatusUpdate.get();
+		long lNow = System.currentTimeMillis();
+		if(lNow-lLast>=STATUS_UPDATE_INTERVAL_MS && m_lLastStatusUpdate.compareAndSet(lLast, lNow)) updateStatusLine();
+	}
+
+	/**
+	 * @return the cache of processed small static files, null if disabled (HTTPStaticCacheMB=0)
+	 */
+	public Cache getStaticFileCache()
+	{
+		return m_cacheStaticFiles;
+	}
+
+	/**
+	 * @return true if any request logging is enabled, so callers can skip building the log entry
+	 */
+	public boolean isStatLogEnabled()
+	{
+		return m_bLogToFile || m_bLogToRDB || m_bLogInbound;
+	}
+
+	/**
+	 * @return true if the TLS handshake should request a client certificate
+	 */
+	public boolean isTrustStoreEnabled()
+	{
+		return m_bTrustStoreEnabled;
 	}
 
 	/**
@@ -427,39 +471,9 @@ public class HTTPServer extends Thread implements ErrorDetect
 			//System.out.println("====== Creating rm");
 			HTTPRequestManager rm = new HTTPRequestManager(m_pSystem, this, sock, request_id, m_bSSL, m_sSystemHostName);
 			//System.out.println("====== rm created");
-			if(m_bSSL && m_bTrustStoreEnabled) 
-			{				
-				SSLSocket sslSock = (SSLSocket)sock;				
-				try {					
-					//System.out.println("====== Starting handshake");
-					//System.out.println("getEnabledCipherSuites: " + Util.implode(sslSock.getEnabledCipherSuites(), "; "));
-					//System.out.println("getEnabledProtocols: " + Util.implode(sslSock.getEnabledProtocols(), "; "));
-					//sslSock.setEnabledCipherSuites(new String[]{"TLS_DHE_RSA_WITH_AES_256_CBC_SHA"});
-					sslSock.setUseClientMode(false);					
-					sslSock.setWantClientAuth(true);
-					sslSock.setEnableSessionCreation(true);		
-					//long lStart = System.currentTimeMillis();
-					sslSock.setTcpNoDelay(true);
-					SSLSession sess = sslSock.getSession();
-					if(sess!=null && sess.isValid())
-					{
-
-						Principal principal = sess.getPeerPrincipal();
-						rm.setSessionPrincipal(principal);						
-						/*
-						System.out.println("CipherSuite=["+sess.getCipherSuite()+"]");
-						long lDiff = System.currentTimeMillis() - lStart;
-						System.out.println("Handshake took: " + lDiff + "ms");
-						 */ 
-					}
-					//System.out.println("====== Finished handshake: " + sess.getPeerPrincipal().getName());
-					//
-					//InputStream inputstream = sslSock.getInputStream();
-				} catch (Exception e) {			
-					e.printStackTrace();
-					return;
-				}
-			}
+			//The TLS handshake (when the trust store is enabled) is done by the request manager on
+			//its worker thread - see HTTPRequestManager.doTLSHandshake(). Doing it here blocked the
+			//single accept thread, with no timeout, for as long as a slow client took.
 			//System.out.println("****** REQUEST " + request_id + " " + " ******");
 			bOK=m_tpm.runThread((pmaThreadInterface)rm);
 		}
