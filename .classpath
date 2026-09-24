@@ -6,8 +6,8 @@
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="/Users/bupson/Documents/data/puakma/lib/shaj-0.5.jar"/>
-	<classpathentry kind="lib" path="/Users/bupson/Documents/data/puakma/jdbc/hsqldb.jar"/>
-	<classpathentry kind="lib" path="/Users/bupson/Documents/data/puakma/lib/json-20241224.jar"/>
+	<classpathentry kind="lib" path="/Users/bupson/Documents/Projects/Puakma/data/puakma/lib/shaj-0.5.jar"/>
+	<classpathentry kind="lib" path="/Users/bupson/Documents/Projects/Puakma/data/puakma/jdbc/hsqldb.jar"/>
+	<classpathentry kind="lib" path="/Users/bupson/Documents/Projects/Puakma/data/puakma/lib/json-20241224.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
