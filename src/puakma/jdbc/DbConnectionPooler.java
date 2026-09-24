@@ -141,6 +141,19 @@ public class DbConnectionPooler extends BasePooler implements ErrorDetect
 	{  return( (java.sql.Connection)getItem() );
 	}
 
+	/**
+	 * Was this pool created with the given driver and credentials?
+	 */
+	public boolean hasSameCredentials( String sdbDriver, String sdbUser, String sdbPassword )
+	{
+		return equalsNullSafe(m_sdbDriver, sdbDriver) && equalsNullSafe(m_sdbUser, sdbUser) && equalsNullSafe(m_sdbPassword, sdbPassword);
+	}
+
+	private static boolean equalsNullSafe( String s1, String s2 )
+	{
+		return s1==null ? s2==null : s1.equals(s2);
+	}
+
 	private void clearConnection( Connection cnx )
 	{
 		try

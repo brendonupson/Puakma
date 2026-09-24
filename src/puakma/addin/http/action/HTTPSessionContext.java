@@ -69,7 +69,9 @@ public class HTTPSessionContext implements ErrorDetect
 	private HTTPRequestManager m_HTTPRM;
 	//private int m_iDataConnGetCount;
 	//private int m_iDataConnReleaseCount;
-	private Hashtable<Connection, Connection> m_htConnections = new Hashtable<Connection, Connection>();
+	//connection -> the TornadoApplication whose pool issued it. The issuing app is kept so the
+	//connection can be released to the right pool even after the app cache has been flushed
+	private Hashtable<Connection, TornadoApplication> m_htConnections = new Hashtable<Connection, TornadoApplication>();
 
 	/* Create a new instance of HTTPSessionContext used by the HTTP stack
 	 * @param httprm
@@ -457,7 +459,7 @@ public class HTTPSessionContext implements ErrorDetect
 		TornadoServerInstance tsi = TornadoServer.getInstance();
 		TornadoApplication ta = tsi.getTornadoApplication(lAppID);
 		Connection cx = ta.getDataConnection(sConnectionName);
-		m_htConnections.put(cx, cx);
+		if(cx!=null) m_htConnections.put(cx, ta);
 		return cx;
 
 	}
@@ -486,7 +488,7 @@ public class HTTPSessionContext implements ErrorDetect
 		TornadoApplication ta = tsi.getTornadoApplication(m_rPath.getPathToApplication());
 		//return ta.getDataConnection(sConnectionName);
 		Connection cx = ta.getDataConnection(sConnectionName);
-		m_htConnections.put(cx, cx);
+		if(cx!=null) m_htConnections.put(cx, ta);
 		return cx;
 	}
 
@@ -508,7 +510,7 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public void releaseDataConnection(long lAppID, Connection cx)
 	{
-		doReleaseDataConnection(cx, lAppID);
+		doReleaseDataConnection(cx, lAppID, true);
 	}
 	/**
 	 * Unlocks a database connection.
@@ -516,22 +518,38 @@ public class HTTPSessionContext implements ErrorDetect
 	 */
 	public void releaseDataConnection(Connection cx)
 	{
-		doReleaseDataConnection(cx, -1);
+		doReleaseDataConnection(cx, -1, true);
 	}
 
 	/**
-	 * Attempts to return cx to its owning application's pool, trying the given appid
-	 * (or the session's current application if lAppID<0) first, then falling back to
-	 * every other loaded application. Returns whether the release actually succeeded,
-	 * so finalize() can tell a genuine leak from a connection it is cleaning up itself.
+	 * Attempts to return cx to its owning application's pool. Tries the application that
+	 * issued it first (still correct if the app cache was flushed while cx was checked out),
+	 * then the given appid (or the session's current application if lAppID<0), then every
+	 * other loaded application. Returns whether the release actually succeeded.
+	 * If bExplicitRelease is true (the app called releaseDataConnection()) and no live pool
+	 * owns cx, its pool was destroyed while it was checked out: the orphan is logged, closed
+	 * and forgotten, so finalize() only ever reports connections the app never released.
 	 * The public releaseDataConnection() overloads stay void for binary compatibility
 	 * with already-compiled app classes.
 	 */
-	private boolean doReleaseDataConnection(Connection cx, long lAppID)
+	private boolean doReleaseDataConnection(Connection cx, long lAppID, boolean bExplicitRelease)
 	{
+		if(cx==null) return false;
+
+		TornadoApplication taIssuer = m_htConnections.get(cx);
+		if(taIssuer!=null && taIssuer.releaseDataConnection(cx))
+		{
+			m_htConnections.remove(cx);
+			return true;
+		}
+
 		TornadoServerInstance tsi = TornadoServer.getInstance();
-		TornadoApplication ta = (lAppID>=0) ? tsi.getTornadoApplication(lAppID) : tsi.getTornadoApplication(m_rPath.getPathToApplication());
-		if(ta!=null && ta.releaseDataConnection(cx))
+		TornadoApplication ta = null;
+		if(lAppID>=0)
+			ta = tsi.getTornadoApplication(lAppID);
+		else if(m_rPath!=null)
+			ta = tsi.getTornadoApplication(m_rPath.getPathToApplication());
+		if(ta!=null && ta!=taIssuer && ta.releaseDataConnection(cx))
 		{
 			m_htConnections.remove(cx);
 			//m_iDataConnReleaseCount++;
@@ -543,8 +561,9 @@ public class HTTPSessionContext implements ErrorDetect
 		Iterator it = htApp.values().iterator();
 		while(it.hasNext())
 		{
-			ta = (TornadoApplication) it.next();
-			if(ta.releaseDataConnection(cx))
+			TornadoApplication taLoaded = (TornadoApplication) it.next();
+			if(taLoaded==ta || taLoaded==taIssuer) continue; //already tried
+			if(taLoaded.releaseDataConnection(cx))
 			{
 				m_htConnections.remove(cx);
 				//m_iDataConnReleaseCount++;
@@ -552,7 +571,31 @@ public class HTTPSessionContext implements ErrorDetect
 			}
 		}
 
+		if(bExplicitRelease) releaseOrphanedConnection(cx);
 		return false;
+	}
+
+	/**
+	 * No live pool owns cx, but the app did release it. This happens when the pool that issued
+	 * cx was removed or reset while cx was checked out. Log it (isClosed=true means the pool
+	 * was destroyed underneath the connection), close it if it is still open as no pool will
+	 * ever reuse it, and stop tracking it so finalize() does not report it as an app leak.
+	 */
+	private void releaseOrphanedConnection(Connection cx)
+	{
+		m_htConnections.remove(cx);
+		if(m_SysCtx.isSystemConnection(cx)) return; //belongs to a live pool after all
+
+		String sURL = "";
+		boolean bClosed = false;
+		try{ bClosed = cx.isClosed(); }catch(Exception e){ bClosed = true; }
+		try{ if(!bClosed) sURL = cx.getMetaData().getURL(); }catch(Exception e){}
+
+		m_SysCtx.doError("releaseDataConnection(): connection %s is not owned by any live pool (pool was reset or replaced while in use). isClosed=%s", new String[]{sURL, String.valueOf(bClosed)}, this);
+		if(!bClosed)
+		{
+			try{ cx.close(); }catch(Exception e){}
+		}
 	}
 
 	/**
@@ -1281,7 +1324,7 @@ public class HTTPSessionContext implements ErrorDetect
 						sbDBNames.append(sDbUrl);
 					}
 				}catch(Exception e){}
-				doReleaseDataConnection(cx, -1);
+				doReleaseDataConnection(cx, -1, false);
 				m_htConnections.remove(cx);
 			}
 			m_SysCtx.doError("pmaSystem.ReleaseConnection", new String[]{ String.valueOf(iOpenConnections), sbDBNames.toString()}, this);

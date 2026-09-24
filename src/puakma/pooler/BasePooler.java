@@ -358,7 +358,11 @@ public abstract class BasePooler extends AbstractPooler
 	public synchronized void removeItem( Object obj )
 	{  
 		int i = getItemIndex( obj );
-		if ( i >= 0 ) removeItemAt( i );
+		if ( i >= 0 )
+		{
+			removeItemAt( i );
+			notifyAll();    // a slot is free, waiting threads may now create a new item
+		}
 	}
 
 

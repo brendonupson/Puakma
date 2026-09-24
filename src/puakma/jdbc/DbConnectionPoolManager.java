@@ -171,6 +171,15 @@ public class DbConnectionPoolManager implements ErrorDetect
 		return false;
 	}
 
+	/**
+	 * Does a pool exist under sAlias that was created with the given driver and credentials?
+	 */
+	public boolean poolMatches( String sAlias, String sdbDriver, String sdbUser, String sdbPassword )
+	{
+		DbConnectionPooler pool = m_map.get( sAlias.trim().toLowerCase() );
+		return pool!=null && pool.hasSameCredentials( sdbDriver, sdbUser, sdbPassword );
+	}
+
 	public boolean removePooler( String sAlias )
 	{  
 		String s = sAlias.trim().toLowerCase();
@@ -214,10 +223,20 @@ public class DbConnectionPoolManager implements ErrorDetect
 		//the next line ensures a pool created with bad credentials etc will be removed from the manager
 		//thus the next time it is called a new pool will be created
 		if(cx==null && pooler.getUsedItemCount()==0) removePooler(sAlias);
-		if(cx!=null) 
+		if(cx!=null)
 		{
-			cx.setAutoCommit(true); //reset to true so caller get it in a consistent state
-			cx.setReadOnly(false);
+			try
+			{
+				cx.setAutoCommit(true); //reset to true so caller get it in a consistent state
+				cx.setReadOnly(false);
+			}
+			catch(Exception e)
+			{
+				//the caller never receives cx so can never release it. Drop it from the pool
+				//(which closes it) rather than leaving the slot locked in use forever
+				pooler.removeItem(cx);
+				throw e;
+			}
 		}
 
 		return cx;

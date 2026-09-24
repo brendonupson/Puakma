@@ -1219,14 +1219,20 @@ public class TornadoApplication implements ErrorDetect
 		try
 		{
 			//if no db name is specified we want a server connection. Chances are, we've called this before with bad credentials
-			//especially if the webdesign dbconnection page has been visited. So for server only connections, remove any old pools and create a new one with new credentials
+			//especially if the webdesign dbconnection page has been visited. So for server only connections, replace the pool
+			//if the credentials have changed. Only when they have changed - destroying the pool closes every connection other
+			//requests have checked out of it, and their releases then fail (reported as leaks). Note a connection defined with
+			//the database in the DBURL and a blank DBName comes through here on every call.
 			if(sDBName==null || sDBName.length()==0)
 			{
 				//this.doDebug(0, "Getting connection to server only [" + sFullURL + "] " + sDriverClass + " " + sDBURL + " "+ sDBUserName + "/" + sDBPassword, this);
-				m_DBPoolMgr.removePooler(sFullURL); //this may return false, if the pool does not exist					
-				m_DBPoolMgr.createPooler(sFullURL, m_iMaxConnectionCount, m_iPoolConnectionTimeoutMS, 0,
-						m_iPoolConnectionExpireSeconds, sDriverClass, sFullURL,
-						sDBUserName, sDBPassword );
+				if(!m_DBPoolMgr.poolMatches(sFullURL, sDriverClass, sDBUserName, sDBPassword))
+				{
+					m_DBPoolMgr.removePooler(sFullURL); //this may return false, if the pool does not exist
+					m_DBPoolMgr.createPooler(sFullURL, m_iMaxConnectionCount, m_iPoolConnectionTimeoutMS, 0,
+							m_iPoolConnectionExpireSeconds, sDriverClass, sFullURL,
+							sDBUserName, sDBPassword );
+				}
 			}
 			else
 			{

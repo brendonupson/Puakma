@@ -411,7 +411,7 @@ public class SystemContext implements ErrorDetect,Cloneable
 	{
 		TornadoServerInstance tsi = TornadoServer.getInstance();
 		TornadoApplication ta = tsi.getTornadoApplication(sAppPath);		
-		ta.resetDatabasePool();
+		if(ta!=null) ta.resetDatabasePool();
 	}
 	/**
 	 * Releases an application specific data connection
