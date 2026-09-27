@@ -54,9 +54,11 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	private String ContentType="text/html";
 	private boolean m_bShouldQuit=false;
 	//private final int CHUNK_SIZE=1024; //increase buffer by this amount when we run out of space
-	private int m_iBufferSize=-1;
+	//private int m_iBufferSize=-1;
 	private boolean m_bHasStreamedData=false; 
 	private ByteArrayOutputStream m_baos = new ByteArrayOutputStream(1024);
+	public String HttpReplyText=null;
+	public int HttpReplyCode=-1;
 
 	public ActionRunner(){}
 
@@ -281,6 +283,25 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	public synchronized void setContentType(String sNewType)
 	{
 		ContentType = sNewType;
+	}
+	
+	public int getHttpReplyCode()
+	{
+		return HttpReplyCode;
+	}
+	
+	public void setHttpReplyCode(int iNewReplyCode)
+	{
+		HttpReplyCode = iNewReplyCode;
+	}
+	public String getHttpReplyText()
+	{
+		return HttpReplyText;
+	}
+	
+	public void setHttpReplyText(String sNewText)
+	{
+		HttpReplyText = sNewText;
 	}
 
 	/**

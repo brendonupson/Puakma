@@ -1207,7 +1207,9 @@ public class HTTPSessionContext implements ErrorDetect
 			act_return.RedirectTo = act.execute();            
 			act_return.HasStreamed = act.hasStreamed();
 			act_return.bBuffer = act.getByteBuffer();
-			act_return.ContentType = act.getContentType();          
+			act_return.ContentType = act.getContentType();    
+			act_return.HttpReplyCode = act.getHttpReplyCode();
+			act_return.HttpReplyText = act.getHttpReplyText();
 		}
 		catch(Throwable e)
 		{

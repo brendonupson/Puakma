@@ -37,8 +37,6 @@ import java.security.Principal;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Locale;
-import java.util.TimeZone;
 import java.util.Vector;
 
 import javax.net.ssl.SSLSession;
@@ -126,6 +124,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 	private String m_http_request_line;  // Stores the GET/POST request line
 	private String m_NewLocation; //used when processing the request
+	private int m_iActionReplyCode = -1; //set by an action via setHttpReplyCode(), only used when >=100
+	private String m_sActionReplyText = null;
 	private pmaAddInStatusLine m_pStatus;
 	private String m_sRequestedHost="";
 	private String m_sBaseRef="";
@@ -138,7 +138,6 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private int m_iInboundSize=0;
 	private String m_sInboundMethod="";
 	private String m_sInboundPath="";
-	private TimeZone m_tzGMT = TimeZone.getTimeZone("GMT");
 	private String m_sHTTPVersion;
 	private String m_sDefaultCharSetLine=null; //"charset=us-ascii";
 	private String m_sCharacterEncoding=null; //eg "ISO-8859-1"
@@ -1312,13 +1311,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			{           
 				if(Util.getMIMELine(extra_headers, "Last-Modified")==null)
 				{
-					String sLastModified = "Last-Modified: " + Util.formatDate(docHTML.designObject.getLastModified(), LAST_MOD_DATE, Locale.UK, m_tzGMT);
+					String sLastModified = "Last-Modified: " + formatHTTPDate(docHTML.designObject.getLastModified());
 					extra_headers.add(sLastModified);
 				}
 				if(Util.getMIMELine(extra_headers, "Expires")==null)
 				{
 					//set an expiry time one hour from now					
-					String sExpires = "Expires: " + Util.formatDate(Util.adjustDate(new Date(), 0, 0, 0, 1, 0, 0), LAST_MOD_DATE, Locale.UK, m_tzGMT);					
+					String sExpires = "Expires: " + Util.toGMTString(System.currentTimeMillis() + 3600000L);					
 					extra_headers.add(sExpires);
 				}
 
@@ -1327,8 +1326,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					iDesignType == DesignElement.DESIGN_TYPE_ACTION)
 			{   
 				bIsCacheNoStore = true;
-				Date dtNow = new Date();
-				String sDate = Util.formatDate(dtNow, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+				String sDate = Util.getCurrentGMTString();
 
 				if(Util.getMIMELine(extra_headers, "Last-Modified")==null)
 				{
@@ -1346,11 +1344,20 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 
 
+		//an action may override the reply code and text sent to the browser
+		boolean bActionReply = m_iActionReplyCode>=100 && (iHTTPReplyCode==RET_OK || iHTTPReplyCode==RET_SEEOTHER);
+		String sActionReplyText = m_sActionReplyText;
+		if(sActionReplyText==null || sActionReplyText.length()==0) sActionReplyText = iHTTPReplyCode==RET_SEEOTHER ? "Moved" : "OK";
+
 		switch(iHTTPReplyCode)
 		{
 		case RET_OK:
-			sendHTTPResponse(iHTTPReplyCode, "OK", extra_headers, HTTP_VERSION,
-					docHTML.getContentType(), docHTML.getContent());
+			if(bActionReply)
+				sendHTTPResponse(m_iActionReplyCode, sActionReplyText, extra_headers, HTTP_VERSION,
+						docHTML.getContentType(), docHTML.getContent());
+			else
+				sendHTTPResponse(iHTTPReplyCode, "OK", extra_headers, HTTP_VERSION,
+						docHTML.getContentType(), docHTML.getContent());
 			break;
 		case RET_NOT_MODIFIED:
 			sendHTTPResponse(iHTTPReplyCode, "Not Modified", extra_headers, HTTP_VERSION,
@@ -1368,7 +1375,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			extra_headers.add("Location: " + szLocation);
 			*/
 			extra_headers.add("Location: " + m_NewLocation);
-			sendHTTPResponse(iHTTPReplyCode, "Moved", extra_headers, HTTP_VERSION, docHTML.getContentType(), docHTML.getContent());
+			if(bActionReply) //eg action wants a 301 or 307 instead of the default 302
+				sendHTTPResponse(m_iActionReplyCode, sActionReplyText, extra_headers, HTTP_VERSION, docHTML.getContentType(), docHTML.getContent());
+			else
+				sendHTTPResponse(iHTTPReplyCode, "Moved", extra_headers, HTTP_VERSION, docHTML.getContentType(), docHTML.getContent());
 			break;
 		case RET_FILENOTFOUND:
 			//sendNotFoundError(null);
@@ -1440,6 +1450,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//m_pSystem.doDebug(0, "performRequest() " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 
 		long lStart = System.currentTimeMillis();
+		m_iActionReplyCode = -1;
+		m_sActionReplyText = null;
 		//guess that means we're after a page, action or something
 		int iRequestReturnCode = processDesignElementRequest(document_path, docHTML, bForceClientPull, bByPassSecurity);
 		if(iRequestReturnCode==RET_FILENOTFOUND || iRequestReturnCode==RET_FORBIDDEN) return iRequestReturnCode;
@@ -1612,7 +1624,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					//act_return.sBuffer = act.getStringBuilder();
 					actionReturn.HasStreamed = m_action.hasStreamed();
 					actionReturn.bBuffer = m_action.getByteBuffer();
-					actionReturn.ContentType = m_action.getContentType(); 
+					actionReturn.ContentType = m_action.getContentType();
+					actionReturn.HttpReplyCode = m_action.getHttpReplyCode();
+					actionReturn.HttpReplyText = m_action.getHttpReplyText();
+					if(actionReturn.HttpReplyCode>=100)
+					{
+						m_iActionReplyCode = actionReturn.HttpReplyCode;
+						m_sActionReplyText = actionReturn.HttpReplyText;
+					}
 					long lActionTimeMS = System.currentTimeMillis() - lStart;
 
 					if(m_http_server.getSlowActionTimeLimitMS()>0 && lActionTimeMS>m_http_server.getSlowActionTimeLimitMS())
@@ -1853,14 +1872,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		FileInputStream fin = null;
 		try
 		{				
-			String sLastModified = "Last-Modified: " + puakma.util.Util.formatDate(dtLastModified, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+			String sLastModified = "Last-Modified: " + formatHTTPDate(dtLastModified);
 			extra_headers.add(sLastModified);
 			int iSeconds = (int)Math.abs((System.currentTimeMillis() - dtLastModified.getTime())/1000);
 			iSeconds = iSeconds/2; //set expiry to half the time since it was last modified
 			int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
 			if(iMaxEpirySeconds>=0 && iSeconds>iMaxEpirySeconds) iSeconds = iMaxEpirySeconds;
 			Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
-			String sExpires = "Expires: " + puakma.util.Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+			String sExpires = "Expires: " + formatHTTPDate(dtExpires);
 			extra_headers.add(sExpires);
 			addCacheControlHeader(null, extra_headers, false);
 
@@ -1905,7 +1924,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			}
 			else
 				serveFileOrStream(iErrCode, sReply, extra_headers, HTTP_VERSION,
-						sMimeType, fToServe.length(),  null, fToServe);
+						sMimeType, fToServe.length(),  null, fToServe, null);
 
 		}
 		catch(Exception e)
@@ -2103,7 +2122,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(extra_headers==null) extra_headers = new ArrayList<String>();
 		if(null==http_response_body)
 		{
-			if((http_code>=300 || http_code<400))
+			//redirects, 1xx, 204 No Content and plain OK get an empty body, not the default error page
+			if((http_code>=300 && http_code<400) || http_code<200 || http_code==204 || http_code==RET_OK)
 			{                  
 				http_response_body = new byte[0];
 			}
@@ -2120,22 +2140,39 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			}
 		}
 		String sEncoding = puakma.util.Util.getMIMELine(extra_headers, "Content-Encoding"); 
-		if(sEncoding==null && http_response_body!=null && http_response_body.length>=MIN_GZIP_SIZE_BYTES  && shouldGZipOutput(content_type) )
-		{
-			//m_pSystem.doDebug(0, "GZipping output for: " + m_http_request_line, this);
-			extra_headers.add("Content-Encoding: gzip");
-			float fBefore = http_response_body.length;          
-			http_response_body = puakma.util.Util.gzipBuffer(http_response_body);
-			float fAfter = http_response_body.length;          
-			if(this.m_http_server.isDebug())
-				m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, "GZIP Output: " + content_type + " " + (int)fBefore + '/' + (int)fAfter + " " + (float)(fAfter/fBefore)*100 + "%", m_pSession);
-		}
+		boolean bGZip = sEncoding==null && http_response_body.length>=MIN_GZIP_SIZE_BYTES && shouldGZipOutput(content_type);
 
-		//generate an ETag header by using md5 of page
-		//this will ensure identical content pages are the same
+		//generate an ETag header by hashing the page before it is gzipped, so an
+		//If-None-Match hit can send a 304 without paying for the gzip
 		String sETag = null;
 		if(http_code>=200 && http_code<300 && m_http_server.shouldGenerateETags())
-			sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(http_response_body));
+		{
+			sETag = makeETag(http_response_body, bGZip);
+			if(isETagMatch(sETag))
+			{
+				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION, content_type, null);
+				return;
+			}
+		}
+
+		if(bGZip)
+		{
+			//m_pSystem.doDebug(0, "GZipping output for: " + m_http_request_line, this);
+			float fBefore = http_response_body.length;          
+			byte[] bufGZip = puakma.util.Util.gzipBuffer(http_response_body);
+			if(bufGZip==null) //gzip failed, send it uncompressed
+			{
+				if(sETag!=null) sETag = makeETag(http_response_body, false);
+			}
+			else
+			{
+				http_response_body = bufGZip;
+				extra_headers.add("Content-Encoding: gzip");
+				float fAfter = http_response_body.length;          
+				if(this.m_http_server.isDebug())
+					m_pSystem.doDebug(pmaLog.DEBUGLEVEL_NONE, "GZIP Output: " + content_type + " " + (int)fBefore + '/' + (int)fAfter + " " + (float)(fAfter/fBefore)*100 + "%", m_pSession);
+			}
+		}
 
 		sendPreparedHTTPResponse(http_code, http_code_string, extra_headers, http_version, content_type, http_response_body, sETag);
 	}
@@ -2146,6 +2183,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private StaticFileCacheItem makeStaticFileCacheItem(String sKey, byte[] buf, boolean bClientGZip)
 	{
+		byte[] bufRaw = buf;
 		boolean bGZipped = false;
 		if(bClientGZip && buf!=null && buf.length>=MIN_GZIP_SIZE_BYTES)
 		{
@@ -2158,8 +2196,29 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		}
 		String sETag = null;
 		if(m_http_server.shouldGenerateETags())
-			sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(buf));
+			sETag = makeETag(bufRaw, bGZipped);
 		return new StaticFileCacheItem(sKey, buf, bGZipped, sETag);
+	}
+
+	/**
+	 * ETag for a response body, hashed before any gzip. The gzipped and plain versions
+	 * of the same body are different representations, so they get different ETags.
+	 */
+	private static String makeETag(byte[] bufRaw, boolean bGZipped)
+	{
+		String sETag = puakma.util.Util.base64Encode(puakma.util.Util.hashBytes(bufRaw));
+		if(sETag!=null && bGZipped) sETag += "-gz";
+		return sETag;
+	}
+
+	/**
+	 * @return true if the client sent an If-None-Match for this ETag
+	 */
+	private boolean isETagMatch(String sETag)
+	{
+		if(sETag==null || m_sIfNoneMatch==null) return false;
+		m_sIfNoneMatch = puakma.util.Util.trimChar(m_sIfNoneMatch, '\"');
+		return m_sIfNoneMatch.equals(sETag);
 	}
 
 	/**
@@ -2176,23 +2235,17 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			extra_headers.add("ETag: \""+sETag+'\"');
 			extra_headers.add("Vary: ETag");
 
-			if(m_sIfNoneMatch!=null)
+			if(isETagMatch(sETag))
 			{
-				m_sIfNoneMatch = puakma.util.Util.trimChar(m_sIfNoneMatch, '\"');
-				//System.out.println("If-None-Match: "+m_sIfNoneMatch);
-				if(m_sIfNoneMatch.equals(sETag))
-				{
-					//System.out.println("ETag matches, send a 304 not modified....");         
-					sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION,
-							content_type, null);
-					return;
-				}           
+				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION,
+						content_type, null);
+				return;
 			}
 
 		}
 
 		serveFileOrStream(http_code, http_code_string, extra_headers, http_version,
-				content_type, http_response_body.length, new ByteArrayInputStream(http_response_body), null);
+				content_type, http_response_body.length, new ByteArrayInputStream(http_response_body), null, http_response_body);
 	}
 
 	/**
@@ -2200,13 +2253,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	private void serveFileOrStream(int http_code, String http_code_string,
 			ArrayList<String> extra_headers, String http_version,
-			String content_type, long lStreamLengthBytes, InputStream is, File fOriginal)
+			String content_type, long lStreamLengthBytes, InputStream is, File fOriginal, byte[] bufBody)
 	{
 		final int MAX_CHUNK = 15000; //200000; //8192; //size of data chunks, 1500mtu?		
 		boolean bIsUsingTempFile = is!=null && fOriginal==null;
 		File fTemp=null;
 		File fByteServe=null;
 		ArrayList<String> out_lines = new ArrayList<String>();
+		StringBuilder sbHead = new StringBuilder(512); //response headers, written once complete
 
 
 
@@ -2247,6 +2301,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(!bIsUsingTempFile) is = new FileInputStream(fOriginal);
 			//this.dumpHeaders(m_environment_lines);
 			String sRange = getByteRangeServe(m_environment_lines);
+			if(http_code!=RET_OK) sRange = null; //don't byte-serve error pages or redirects
 			if(sRange!=null)
 			{
 				http_code = RET_PARTIAL_CONTENT;
@@ -2254,33 +2309,33 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 			}
 			//System.err.println("serveFileOrStream(): range:["+sRange+"] ");
-			m_os.write((http_version + " " + http_code + " " + http_code_string + HTTP_NEWLINE).getBytes());
+			sbHead.append(http_version + " " + http_code + " " + http_code_string).append(HTTP_NEWLINE);
 			String sServer = "Server: Tornado/" + m_pSystem.getVersion();
-			m_os.write((sServer + HTTP_NEWLINE).getBytes());
-			String sDate = "Date: " + puakma.util.Util.formatDate(new java.util.Date(), LAST_MOD_DATE, Locale.UK, m_tzGMT);
-			m_os.write((sDate + HTTP_NEWLINE).getBytes());
+			sbHead.append(sServer).append(HTTP_NEWLINE);
+			String sDate = "Date: " + Util.getCurrentGMTString();
+			sbHead.append(sDate).append(HTTP_NEWLINE);
 			out_lines.add(sServer);
 			out_lines.add(sDate);
 
 			//tell the client byteserving is supported...
-			if(m_bAllowByteRangeServing) m_os.write(("Accept-Ranges: bytes" + HTTP_NEWLINE).getBytes());
+			if(m_bAllowByteRangeServing) sbHead.append("Accept-Ranges: bytes").append(HTTP_NEWLINE);
 
 			if(m_fHTTPVersion<1.1 || m_bCloseConnection || !m_pSystem.isSystemRunning())
 			{
-				m_os.write(("Connection: close" + HTTP_NEWLINE).getBytes());
+				sbHead.append("Connection: close").append(HTTP_NEWLINE);
 				out_lines.add("Connection: close");
 			}
 			else
 			{
-				m_os.write(("Connection: Keep-Alive" + HTTP_NEWLINE).getBytes());
+				sbHead.append("Connection: Keep-Alive").append(HTTP_NEWLINE);
 				String sTimeout = "Keep-Alive: timeout=" + m_iKeepAliveTimeoutSeconds + ", max=" + m_iConnectionsLeft;
-				m_os.write((sTimeout + HTTP_NEWLINE).getBytes());
+				sbHead.append(sTimeout).append(HTTP_NEWLINE);
 				out_lines.add("Connection: Keep-Alive");
 				out_lines.add(sTimeout);
 			}
 			/*if(!m_pSystem.isLicensedVersion()) 
           {
-              m_os.write(("X-HTTPLicense: NON-COMMERCIAL USE ONLY" + HTTP_NEWLINE).getBytes());
+              sbHead.append("X-HTTPLicense: NON-COMMERCIAL USE ONLY").append(HTTP_NEWLINE);
               out_lines.add("X-HTTPLicense: NON-COMMERCIAL USE ONLY");
           }*/
 
@@ -2288,19 +2343,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			// Send out any extra headers, if we were given any
 			if(null != extra_headers)
 			{
-				String header_line;
-
 				// Loop through the header line Strings
-				Object oHeaders[] = extra_headers.toArray();
-				for(int i=0; i<oHeaders.length; i++ )
+				for(int i=0; i<extra_headers.size(); i++ )
 				{
 					// Send the header line out to the client
-					header_line = (String) oHeaders[i];
+					String header_line = extra_headers.get(i);
 					out_lines.add(header_line);
 					//System.out.println(request_id + " " + header_line);
-					header_line = header_line + HTTP_NEWLINE;
-					m_os.write(header_line.getBytes());
-
+					sbHead.append(header_line).append(HTTP_NEWLINE);
 				}
 			}//extra headers
 
@@ -2354,45 +2404,44 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						FileOutputStream foutBS = new FileOutputStream(fByteServe);
 
 						String sBoundary = getNextMimeBoundary();
-						long lTotalOut=0;
+						int iPartsWritten=0;
+						byte[] output = new byte[MAX_CHUNK];
 						//for each chunk                      
 						for(int i=0; i<arrRange.size(); i++)
 						{
-							FileInputStream fin = new FileInputStream(fTemp);
-							String sSubRange = puakma.util.Util.trimSpaces((String)arrRange.get(i)); 
-							long lRange[] = getRangeAsLong(sSubRange);
-							if(lRange[1]<=0) lRange[1] = (lStreamLengthBytes-1);
-							long lRequestLength=(lRange[1]-lRange[0])+1;
-							//System.out.println(i+":"+sSubRange + " "+iRequestLength + " bytes");
+							long lRange[] = resolveByteRange((String)arrRange.get(i), lStreamLengthBytes);
+							if(lRange==null) continue; //unsatisfiable part, leave it out
 
 							foutBS.write(("\r\n--"+sBoundary+"\r\n").getBytes());
 							String sContentType = "Content-Type: "+content_type;
 							foutBS.write((sContentType+"\r\n").getBytes());
 							out_lines.add(sContentType);
-							foutBS.write(("Content-Range: bytes "+sSubRange+"/"+lStreamLengthBytes+"\r\n\r\n").getBytes());
-							//add data.....
-							//System.out.println("Skipping " + (iRange[0]-1));
-							//System.out.println("Available stream:"+fin.available());
-							//soakStartStream(fin, iRange[0]-lTotalOut);
-							if(lRange[0]>0) fin.skip(lRange[0]-1);
-							lTotalOut += lRange[0]-1;
+							foutBS.write(("Content-Range: bytes "+lRange[0]+"-"+lRange[1]+"/"+lStreamLengthBytes+"\r\n\r\n").getBytes());
 
-							int len=0;
-							int iWrote=0;
-
-							//System.out.println("request length " + iRequestLength);
-							byte[] output = new byte[MAX_CHUNK];
-							int iRead;
-							while(iWrote<lRequestLength && (iRead=fin.read(output)) > 0)
+							FileInputStream fin = new FileInputStream(fTemp);
+							try
 							{
-								foutBS.write(output, 0, iRead);
-								lTotalOut += iRead;
-								iWrote += iRead;
-								if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
+								skipFully(fin, lRange[0]);
+								long lRemaining=(lRange[1]-lRange[0])+1;
+								int iRead;
+								while(lRemaining>0 && (iRead=fin.read(output, 0, (int)Math.min(output.length, lRemaining))) > 0)
+								{
+									foutBS.write(output, 0, iRead);
+									lRemaining -= iRead;
+									if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
+								}
 							}
-							//System.out.println("     : "+iRequestLength);
-							//System.out.println("wrote: "+iWrote);                          
-							fin.close();
+							finally
+							{
+								fin.close();
+							}
+							iPartsWritten++;
+						}
+						if(iPartsWritten==0)
+						{
+							foutBS.close();
+							sendRangeNotSatisfiable();
+							return;
 						}
 						foutBS.write(("\r\n--"+sBoundary+"--\r\n").getBytes());
 						foutBS.flush();
@@ -2402,70 +2451,63 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						content_type = "multipart/byteranges; boundary="+sBoundary;
 
 						lFirstByteInRange = 0;                      
-						lLastByteInRange=fByteServe.length();
+						lLastByteInRange=fByteServe.length()-1;
 						is = (InputStream)(new FileInputStream(fByteServe));
 						//System.out.println("Finished multi-range serve: "+lEndRange);
 					}//if range >1
 					else //single range
 					{
-						int iDashPos = sRange.indexOf('-');
-						String sStartRange = sRange.substring(0, iDashPos);
-						if(sStartRange.length()>0)
-						{                          
-							try{lFirstByteInRange=Long.parseLong(sStartRange);}catch(Exception e){} 
-						}
-
-						//determine the end range...                      
-						if(iDashPos>0)
+						long lRange[] = resolveByteRange(sRange, lStreamLengthBytes);
+						if(lRange==null)
 						{
-							String sEndRange = sRange.substring(iDashPos+1, sRange.length());
-							try{lLastByteInRange=Long.parseLong(sEndRange);}catch(Exception e){} 
-							if(lLastByteInRange==0) lLastByteInRange = (lStreamLengthBytes-1);
-						}
-						//}
-						//m_pSystem.doDebug(0, "byte serving! ["+sRange+"] firstbyte="+lFirstByteInRange+" lastbyte="+lLastByteInRange + " stream len="+lStreamLengthBytes, this);
-						//if first > eof then return 416 Requested range not satisfiable
-						if(	(lLastByteInRange>lStreamLengthBytes || lFirstByteInRange>lLastByteInRange || lFirstByteInRange<0))
-						{
-							//disable byte serving
-							//m_bAllowByteRangeServing = false;
-							//m_pSystem.doDebug(0, m_sInboundMethod + " 416 ["+sRange+"] firstbyte="+lFirstByteInRange+" lastbyte="+lLastByteInRange + " stream len="+lStreamLengthBytes, this);
-							Util.replaceHeaderValue(m_environment_lines, "Content-Range", null);
-							Util.replaceHeaderValue(m_environment_lines, "Range", null);
-							String sErr = "Requested range not satisfiable";                             
-							sendError(416, sErr, "text/plain", sErr.getBytes());
+							sendRangeNotSatisfiable();
 							return;
 						}
+						lFirstByteInRange = lRange[0];
+						lLastByteInRange = lRange[1];
 
-						m_os.write(("Content-Range: bytes " + lFirstByteInRange + "-" + lLastByteInRange + "/" + lStreamLengthBytes + HTTP_NEWLINE).getBytes());
+						sbHead.append("Content-Range: bytes " + lFirstByteInRange + "-" + lLastByteInRange + "/" + lStreamLengthBytes).append(HTTP_NEWLINE);
 					}
 				}
 				String sContentType = "Content-Type: " + getAppropriateCharset(content_type);
-				m_os.write((sContentType + HTTP_NEWLINE).getBytes());
+				sbHead.append(sContentType).append(HTTP_NEWLINE);
 				String sContentLength = "Content-Length: " + ((lLastByteInRange-lFirstByteInRange)+1);
 				//System.err.println("serveFileOrStream(): sContentLength:["+sContentLength+"] ");
-				m_os.write((sContentLength + HTTP_NEWLINE).getBytes());
+				sbHead.append(sContentLength).append(HTTP_NEWLINE);
 				out_lines.add(sContentType);
 				out_lines.add(sContentLength);
 			} 
 			//System.out.println("here");
 			//send a blank line to denote the start of the data
-			m_os.write((HTTP_NEWLINE).getBytes());
+			sbHead.append(HTTP_NEWLINE);
+			m_os.write(sbHead.toString().getBytes()); //all headers in one write
 
 
 			if(!m_sInboundMethod.equalsIgnoreCase("HEAD") && http_code!=RET_NOT_MODIFIED)
 			{				
 				long lTotalOut=0;				
-				byte bufOutput[] = new byte[MAX_CHUNK];				
-				is.skip(lFirstByteInRange);
-
-				int iRead;
-				while((iRead=is.read(bufOutput)) > 0)
+				if(bufBody!=null && sRange==null) //whole body is already in memory, write it in one go
 				{
-					m_os.write(bufOutput, 0, iRead);
-					m_http_server.updateBytesServed(iRead);
-					lTotalOut += iRead;
-					if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
+					m_os.write(bufBody);
+					m_http_server.updateBytesServed(bufBody.length);
+					lTotalOut = bufBody.length;
+				}
+				else
+				{
+					byte bufOutput[] = new byte[MAX_CHUNK];				
+					skipFully(is, lFirstByteInRange);
+
+					//send only what Content-Length promised, not the rest of the stream
+					long lRemaining = (lLastByteInRange-lFirstByteInRange)+1;
+					int iRead;
+					while(lRemaining>0 && (iRead=is.read(bufOutput, 0, (int)Math.min(bufOutput.length, lRemaining))) > 0)
+					{
+						m_os.write(bufOutput, 0, iRead);
+						m_http_server.updateBytesServed(iRead);
+						lTotalOut += iRead;
+						lRemaining -= iRead;
+						if(!m_http_server.isRunning()) throw new InterruptedException("Server is shutting down");
+					}
 				}
 				//System.out.println("Wrote: "+lTotalOut);
 				m_http_server.incrementStatistic(HTTP.STATISTIC_KEY_BYTESOUTPERHOUR, lTotalOut);
@@ -2513,28 +2555,70 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	}
 
 	/**
-	 * When a range is passed eg "2311-3099" will return 2311 & 3099
-	 * This indicates how many bytes should be skipped from the start of the stream
-	 * and how many bytes should be read from the stream when processed by the calling function.
-	 *
+	 * Works out the first and last byte of one range, eg "100-199", "500-" (from byte 500 to the end)
+	 * or "-500" (the last 500 bytes). An end past the end of the stream is trimmed to the last byte.
+	 * @return {first, last}, or null if the range is malformed or cannot be satisfied
 	 */
-	private long[] getRangeAsLong(String sSubRange)
+	private static long[] resolveByteRange(String sSubRange, long lStreamLength)
 	{
-		long lReturn[] = new long[2];
-
-		int iPos = sSubRange.indexOf('-');
-		if(iPos>0)
+		if(sSubRange==null || lStreamLength<=0) return null;
+		sSubRange = sSubRange.trim();
+		int iDash = sSubRange.indexOf('-');
+		if(iDash<0) return null;
+		String sStart = sSubRange.substring(0, iDash).trim();
+		String sEnd = sSubRange.substring(iDash+1).trim();
+		long lFirst;
+		long lLast;
+		try
 		{
-			String sStart = sSubRange.substring(0, iPos);
-			String sEnd = sSubRange.substring(iPos+1, sSubRange.length());
-			//int iStart=0;
-			//int iEnd=0;
-			try{lReturn[0] = Long.parseLong(sStart);}catch(Exception a){}
-			try{lReturn[1] = Long.parseLong(sEnd);}catch(Exception a){}
-			//iReturn[0] = iStart;
-			//iReturn[1] = iEnd;
+			if(sStart.length()==0) //suffix range, the last n bytes
+			{
+				long lSuffix = Long.parseLong(sEnd);
+				if(lSuffix<=0) return null;
+				lFirst = Math.max(0, lStreamLength-lSuffix);
+				lLast = lStreamLength-1;
+			}
+			else
+			{
+				lFirst = Long.parseLong(sStart);
+				lLast = sEnd.length()==0 ? lStreamLength-1 : Long.parseLong(sEnd);
+				if(lLast>=lStreamLength) lLast = lStreamLength-1;
+			}
 		}
-		return lReturn;
+		catch(NumberFormatException e)
+		{
+			return null;
+		}
+		if(lFirst<0 || lFirst>lLast) return null;
+		return new long[]{lFirst, lLast};
+	}
+
+	/**
+	 * InputStream.skip() may skip fewer bytes than asked, so keep going until done or end of stream
+	 */
+	private static void skipFully(InputStream is, long lSkip) throws IOException
+	{
+		while(lSkip>0)
+		{
+			long lSkipped = is.skip(lSkip);
+			if(lSkipped<=0)
+			{
+				if(is.read()<0) return; //end of stream
+				lSkipped = 1;
+			}
+			lSkip -= lSkipped;
+		}
+	}
+
+	/**
+	 * Reply 416 when none of the requested byte ranges can be served
+	 */
+	private void sendRangeNotSatisfiable()
+	{
+		Util.replaceHeaderValue(m_environment_lines, "Content-Range", null);
+		Util.replaceHeaderValue(m_environment_lines, "Range", null);
+		String sErr = "Requested range not satisfiable";                             
+		sendError(416, sErr, "text/plain", sErr.getBytes());
 	}
 
 	/**
@@ -2942,7 +3026,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				if(lDiff<0) lDiff = 0;
 				if(lDiff>0) dtExpires = Util.adjustDate(dtExpires, 0, 0, 0, 0, 0, (int) (lDiff/1000) );
 				*/
-				String sLastGMTMod = Util.formatDate(dtLastModified, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+				String sLastGMTMod = formatHTTPDate(dtLastModified);
 				document.setExtraHeaderValue("Last-Modified", sLastGMTMod, true);
 				
 				int iSeconds = (int)Math.abs((System.currentTimeMillis() - dtLastModified.getTime())/1000);
@@ -2951,7 +3035,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				if(iMaxEpirySeconds>=0 && iSeconds>iMaxEpirySeconds) iSeconds = iMaxEpirySeconds;
 				Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
 				
-				String sExpiresGMT = Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+				String sExpiresGMT = formatHTTPDate(dtExpires);
 				document.setExtraHeaderValue("Expires", sExpiresGMT, true);
 				
 				addCacheControlHeader(document, null, false);
@@ -3008,6 +3092,16 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * Determines if the design element has changed since the date If-Modified-Since
 	 * sent by the client
 	 */
+	/**
+	 * Formats a date for an HTTP header, eg "Mon, 28 Sep 2026 10:15:00 GMT"
+	 * @return "" if the date is null
+	 */
+	private static String formatHTTPDate(Date dt)
+	{
+		if(dt==null) return "";
+		return Util.toGMTString(dt.getTime());
+	}
+
 	private boolean hasResourceChanged(Date dtLastModified)
 	{
 		String sIfModSince = Util.getMIMELine(m_environment_lines, "If-Modified-Since");		
@@ -3018,7 +3112,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		int iPos = sIfModSince.indexOf(';');
 		if(iPos>0) sIfModSince = sIfModSince.substring(0, iPos);
-		String sLastGMTMod = Util.formatDate(dtLastModified, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+		String sLastGMTMod = formatHTTPDate(dtLastModified);
 		//System.out.println("If-Modified-Since: "+sIfModSince);
 		//System.out.println("Last Mod:          "+sLastGMTMod);
 		boolean bTheSame = sLastGMTMod.equals(sIfModSince);
@@ -3294,18 +3388,22 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			sContentType = sContentType.substring(0, iPos);
 		}
+		//ignore parameters, eg "application/json; charset=utf-8"
+		iPos = sContentType.indexOf(';');
+		if(iPos>0) sContentType = sContentType.substring(0, iPos).trim();
 		String sAcceptEncoding = Util.getMIMELine(m_environment_lines, "Accept-Encoding");
 		if(sAcceptEncoding!=null && sAcceptEncoding.indexOf("gzip")>=0) 
 		{
 			//only compress text data, eg text/html, text/xml, application/x-javascript etc
-			//don't compress gif files and zip files
-			if(sContentType!=null  && 
-					(sContentType.startsWith("text") || 
-							sContentType.endsWith("jpg") || 
-							sContentType.endsWith("jpeg") || 
-							sContentType.equals("application/x-javascript")  || 
-							sContentType.equals("application/javascript")  || 
-							sContentType.equals("application/json"))) return true;
+			//don't compress gif, jpeg or zip files, they are already compressed
+			if(sContentType!=null  &&
+					(sContentType.startsWith("text") ||
+							sContentType.equals("application/x-javascript")  ||
+							sContentType.equals("application/javascript")  ||
+							sContentType.equals("application/json") ||
+							sContentType.equals("application/xml") ||
+							sContentType.equals("application/xhtml+xml") ||
+							sContentType.equals("image/svg+xml"))) return true;
 
 			//!sContentType.equals("image/gif") && !sContentType.endsWith("jpg"))  return true;
 		}

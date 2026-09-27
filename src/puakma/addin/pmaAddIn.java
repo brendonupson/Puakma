@@ -409,12 +409,8 @@ public class pmaAddIn extends Thread implements ErrorDetect
 	public void incrementStatistic(String sStatisticKey, double dIncrementBy)
 	{
 		if(sStatisticKey==null) return;
-		sStatisticKey = sStatisticKey.toLowerCase();
-		if(m_htStatistics.containsKey(sStatisticKey))
-		{
-			AddInStatistic as = (AddInStatistic) m_htStatistics.get(sStatisticKey);
-			as.increment(dIncrementBy);
-		}
+		AddInStatistic as = m_htStatistics.get(sStatisticKey.toLowerCase());
+		if(as!=null) as.increment(dIncrementBy);
 	}
 	
 	/**

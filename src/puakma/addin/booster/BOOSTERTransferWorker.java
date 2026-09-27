@@ -542,7 +542,7 @@ public class BOOSTERTransferWorker
 					java.util.Date dtExpires = new java.util.Date();
 					dtExpires.setTime(lExpiryDate);
 					//System.out.println("Past expiry date. Now set to " + dtExpires);
-					sExpires = puakma.util.Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+					sExpires = Util.toGMTString(dtExpires);
 					puakma.util.Util.replaceHeaderValue(environment_lines, "Expires", sExpires);
 				}
 
@@ -1063,7 +1063,7 @@ public class BOOSTERTransferWorker
 		{
 			os.write((HTTP_VERSION + " " + http_code + " " + http_code_string + HTTP_NEWLINE).getBytes());
 			os.write(("Server: Puakma/" + m_Parent.m_pSystem.getVersion() + " (BOOSTER)"+HTTP_NEWLINE).getBytes());
-			os.write(("Date: " + Util.formatDate(new java.util.Date(), LAST_MOD_DATE, Locale.UK, m_tzGMT) + HTTP_NEWLINE).getBytes());
+			os.write(("Date: " + Util.getCurrentGMTString() + HTTP_NEWLINE).getBytes());
 			String sConnection = Util.getMIMELine(extra_headers, "Connection");			
 			if(sConnection==null) os.write(("Connection: close" + HTTP_NEWLINE).getBytes());
 			if(null == content_type) content_type="text/html";

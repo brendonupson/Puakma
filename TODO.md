@@ -36,5 +36,22 @@ Each connection still holds a worker thread while it is open. Tier 1 shortened t
 
 ### 4. Minor
 - `SystemContext.clone()` is `synchronized` on the shared context, so every action takes a global lock.
-- `HTTPRequestManager.customHTTPHeaderProcessing()` loads and constructs each header processor class by reflection (`Class.forName` + `newInstance`) on every request. The `Class` objects could be cached.
-- In `HTTPRequestManager.sendHTTPResponse()`, the condition `(http_code>=300 || http_code<400)` is always true, so the default error body is never sent.
+- `HTTPRequestManager.customHTTPHeaderProcessing()` loads and constructs each header processor class by reflection (`Class.forName` + `newInstance`) on every request.
+  - **Approach:** cache the `Class[]` for the current `getCustomHeaderProcessors()` array, and rebuild it when the array reference changes on a config reload.
+  - Keep creating a new instance per request, because processors hold per-request state.
+
+### 5. Request logging runs on the request thread
+Found in a second review on 28 Sep 2026.
+- **RDB logging:** `HTTP.writeRDBStatLog()` (HTTPSTAT) and `HTTPServer.writeRDBInboundStatLog()` (HTTPSTATIN) each get a pooled system connection and do an INSERT on the request thread. With those logs on, that adds 1–2 DB round trips to every request, and a slow DB slows every request.
+  - **Approach:** a bounded queue drained by one background thread that batch-inserts.
+  - **Decision needed:** what to drop when the queue is full, and whether losing queued entries on a crash is acceptable.
+- **Text log:** `HTTP.writeTextStatLog()` does one unbuffered `FileOutputStream.write` per request inside a server-wide `synchronized`. It's cheap today. Buffering it would cut syscalls, but lines could be lost on a crash unless it is flushed on a timer.
+
+## Done in the second review (28 Sep 2026)
+For reference, so these are not re-investigated:
+- **Stats counters:** `AddInStatistic` caches the current time bucket instead of building Calendars on every increment. This also fixed a race that could create duplicate buckets.
+- **HTTP dates:** use a shared English `DateTimeFormatter` (`Util.toGMTString()` / `getCurrentGMTString()`). `Locale.UK` had been producing "Sept", which is not a valid HTTP date.
+- **gzip:** JPEGs are no longer gzipped. The ETag is hashed before gzip, so a 304 skips the gzip. Page bodies are written directly, and headers are sent in one write.
+- **`Util.getMIMELine()`:** no longer creates a substring for every header.
+- **`sendHTTPResponse()`:** the always-true body condition is fixed.
+- **Byte ranges:** a single range sent the rest of the stream after the range. Multi-range skipped one byte too few, overshot each part, and gave a `Content-Length` one byte too many. Suffix (`-500`) and malformed ranges are now handled, and ranges are no longer applied to error responses.

@@ -32,6 +32,9 @@ public class ActionReturn
   public String RedirectTo=null;
   public String ContentType=null;
   public boolean HasStreamed=false; //action has streamed data directly to the browser
+  
+  public String HttpReplyText=null;
+  public int HttpReplyCode=-1;
 
   public ActionReturn()
   {
@@ -39,18 +42,20 @@ public class ActionReturn
   
   public String toString()
   {
+	  final String CRLF = "\r\n";
 	  StringBuilder sb = new StringBuilder();
 	  
 	  if(bBuffer==null)
-		  sb.append("bBuffer=null");
+		  sb.append("bBuffer=null" + CRLF);
 	  else
 	  {
-		  sb.append("bBuffer=" + bBuffer.length);
-		  sb.append("bBuffer=" + new String(bBuffer));
+		  sb.append("bBuffer=" + bBuffer.length + CRLF);
+		  sb.append("bBuffer=" + new String(bBuffer) + CRLF);
 	  }
-	  sb.append("RedirectTo=" + RedirectTo);
-	  sb.append("ContentType=" + ContentType);
-	  sb.append("HasStreamed=" + HasStreamed);
+	  sb.append("RedirectTo=" + RedirectTo + CRLF);
+	  sb.append("ContentType=" + ContentType + CRLF);
+	  sb.append("HasStreamed=" + HasStreamed + CRLF);
+	  if(HttpReplyCode>=100) sb.append("HttpReply: " + HttpReplyCode + " " + HttpReplyText + CRLF);
 	  return sb.toString();
   }
 

@@ -109,7 +109,7 @@ public class BOOSTERCacheItem implements CacheableItem
 
 		java.util.Date dtExpires = new java.util.Date();
 		dtExpires.setTime(m_lExpiryDate);
-		sExpires = Util.formatDate(dtExpires, LAST_MOD_DATE, Locale.UK, m_tzGMT);
+		sExpires = Util.toGMTString(dtExpires);
 		//System.out.println("cacheitem - Expires set to: " + sExpires);
 		puakma.util.Util.replaceHeaderValue(arrHeaders, "Expires", sExpires);
 
@@ -242,7 +242,7 @@ public class BOOSTERCacheItem implements CacheableItem
 
 
 		sbHeaders.append("HTTP/1.1 200 OK\r\n");
-		sbHeaders.append("Date: " + Util.formatDate(new java.util.Date(), LAST_MOD_DATE, Locale.UK, m_tzGMT));
+		sbHeaders.append("Date: " + Util.getCurrentGMTString());
 		sbHeaders.append("\r\n");        
 		for(int i=0; i<m_arrHeaders.size(); i++)
 		{

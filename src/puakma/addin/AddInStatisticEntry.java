@@ -9,12 +9,14 @@ public class AddInStatisticEntry
 	private Date m_dtFromDate;
 	private Date m_dtToDate;
 	private Object m_data;
+	private final long m_lToMillis; //end of this period, Long.MAX_VALUE if it never ends
 
 	public AddInStatisticEntry(Date dtFrom, Date dtTo, Object objData)
 	{
 		m_dtFromDate = dtFrom;
 		m_dtToDate = dtTo;
 		m_data = objData;
+		m_lToMillis = dtTo==null ? Long.MAX_VALUE : dtTo.getTime();
 	}
 
 	public AddInStatisticEntry(Object objData)
@@ -22,6 +24,15 @@ public class AddInStatisticEntry
 		//m_dtFromDate = dtFrom;
 		//m_dtToDate = dtTo;
 		m_data = objData;
+		m_lToMillis = Long.MAX_VALUE;
+	}
+
+	/**
+	 * @return true if the time given falls before the end of this entry's period
+	 */
+	public boolean isCurrent(long lNowMillis)
+	{
+		return lNowMillis < m_lToMillis;
 	}
 
 	

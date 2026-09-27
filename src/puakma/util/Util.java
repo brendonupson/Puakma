@@ -44,6 +44,9 @@ import java.text.DateFormat;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -105,22 +108,13 @@ public class Util
 	 */
 	public static String trimChar(String sString, char c)
 	{
-		/*if(sString==null) return null;
+		if(sString==null) return null;
 		int iLen = sString.length();
-		if(iLen==0) return sString;
-
-		StringBuilder sbData = new StringBuilder(512);
-		sbData.append(sString);
 		int iStart=0;
-
-		while(iStart<iLen && sbData.charAt(iStart)==c) iStart++;
-		int iEnd=iLen-1;
-		while(iEnd>0 && sbData.charAt(iEnd)==c) iEnd--;
-
-		if(iStart>iEnd) return "";
-		return sbData.substring(iStart, iEnd+1);
-		 */
-		return trimChar(sString, new char[]{c});
+		while(iStart<iLen && sString.charAt(iStart)==c) iStart++;
+		int iEnd=iLen;
+		while(iEnd>iStart && sString.charAt(iEnd-1)==c) iEnd--;
+		return sString.substring(iStart, iEnd); //returns sString itself when nothing was trimmed
 	}
 
 
@@ -305,18 +299,18 @@ public class Util
 
 
 	/**
-	 * Strips the leading and trailing spaces from a string
-	 * " xxxx  " will return "xxxx"
+	 * Strips all leading and trailing repeats of a string from a string
+	 * trimChars("//a/b//", "/") will return "a/b"
 	 */
 	public static String trimChars(String sString, String sToTrim)
 	{
-		String sReturn=sString;
+		if(sString==null || sToTrim==null || sToTrim.length()==0) return sString;
 		int iToTrimLength=sToTrim.length();
-
-		while(sReturn.startsWith(sToTrim)) sReturn = sReturn.substring(iToTrimLength, sReturn.length());
-		while(sReturn.endsWith(sToTrim)) sReturn = sReturn.substring(0, sReturn.length()-iToTrimLength);
-
-		return sReturn;
+		int iStart=0;
+		while(sString.startsWith(sToTrim, iStart)) iStart += iToTrimLength;
+		int iEnd=sString.length();
+		while(iEnd-iToTrimLength>=iStart && sString.startsWith(sToTrim, iEnd-iToTrimLength)) iEnd -= iToTrimLength;
+		return sString.substring(iStart, iEnd);
 	}
 
 	/**
@@ -326,9 +320,36 @@ public class Util
 	 */
 	public static String toGMTString(Date dtIn)
 	{
-		if(dtIn==null) dtIn = new Date();
-		String sGMTFormat = "EEE, dd MMM yyyy HH:mm:ss z";
-		return formatDate(dtIn, sGMTFormat, Locale.UK, TimeZone.getTimeZone("GMT"));
+		if(dtIn==null) return getCurrentGMTString();
+		return toGMTString(dtIn.getTime());
+	}
+
+	/**
+	 * HTTP date format (RFC 7231). Always English month/day names: some locales give "Sept",
+	 * which is not a valid HTTP date. DateTimeFormatter is immutable so safe to share.
+	 */
+	private static final DateTimeFormatter HTTP_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.ENGLISH).withZone(ZoneOffset.UTC);
+	private static volatile Object[] m_objCurrentGMT = new Object[]{Long.valueOf(-1), ""}; //{second, formatted string}
+
+	/**
+	 * Convert a time in milliseconds into a format suitable for http headers etc "EEE, dd MMM yyyy HH:mm:ss GMT"
+	 */
+	public static String toGMTString(long lMillis)
+	{
+		return HTTP_DATE_FORMAT.format(Instant.ofEpochMilli(lMillis));
+	}
+
+	/**
+	 * The current time in HTTP header format. Only reformatted once a second.
+	 */
+	public static String getCurrentGMTString()
+	{
+		long lSecond = System.currentTimeMillis()/1000;
+		Object[] objCurrent = m_objCurrentGMT;
+		if(((Long)objCurrent[0]).longValue()==lSecond) return (String)objCurrent[1];
+		String sNow = toGMTString(lSecond*1000);
+		m_objCurrentGMT = new Object[]{Long.valueOf(lSecond), sNow};
+		return sNow;
 	}
 
 	/**
@@ -347,7 +368,7 @@ public class Util
 		{
 			String sLine = (String)v.get(i);
 			iOffset = sLine.indexOf(':');
-			if( iOffset > 0 && sKey.equalsIgnoreCase(sLine.substring(0, iOffset)) )
+			if( iOffset > 0 && iOffset==sKey.length() && sLine.regionMatches(true, 0, sKey, 0, iOffset) )
 			{
 				//+1 to skip the space after the : ie, "Content-Length: 25"
 				if(iOffset+2>sLine.length()) return ""; //check for java.lang.StringIndexOutOfBoundsException
@@ -379,10 +400,16 @@ public class Util
 		{
 			szLine = (String)v.get(i);
 			iOffset = szLine.indexOf(':');
-			if( iOffset > 0 && sKey.equalsIgnoreCase(szLine.substring(0, iOffset)) )
+			if( iOffset > 0 && iOffset==sKey.length() && szLine.regionMatches(true, 0, sKey, 0, iOffset) )
 			{
 				//+1 to skip the space after the : ie, "Content-Length: 25"
+				if(iOffset+2>szLine.length()) //check for java.lang.StringIndexOutOfBoundsException
+				{
+					arrReturn.add("");
+					continue;
+				}
 				szLine = szLine.substring(iOffset+2, szLine.length());
+				szLine2 = "";
 				if(i<v.size()-1) //check for another line!
 				{
 					szLine2 = (String)v.get(i+1);
@@ -407,12 +434,11 @@ public class Util
 	{
 		int iOffset;
 		if(sName==null || sLine==null) return null;
-		sName = sName + "=";
 
-		iOffset = sLine.indexOf(sName);
+		iOffset = findMIMELineValueStart(sLine, sName);
 		if(iOffset>=0)
 		{
-			sLine = sLine.substring(iOffset+sName.length(), sLine.length());
+			sLine = sLine.substring(iOffset, sLine.length());
 			if(sLine.length()>0 && sLine.charAt(0)=='\"')
 			{
 				sLine = sLine.substring(1, sLine.length());
@@ -433,15 +459,42 @@ public class Util
 	}
 
 	/**
+	 * Finds where the value of name=value starts. The name must be a whole parameter name, so
+	 * "name" does not match inside "filename=" or "my_name=", and text inside quoted values is skipped.
+	 * @return the index just after the '=', or -1 if not found
+	 */
+	private static int findMIMELineValueStart(String sLine, String sName)
+	{
+		int iNameLen = sName.length();
+		boolean bInQuotes = false;
+		boolean bAtNameStart = true; //start of line, or just after a ; or whitespace
+		for(int i=0; i<sLine.length(); i++)
+		{
+			char c = sLine.charAt(i);
+			if(c=='\"')
+			{
+				bInQuotes = !bInQuotes;
+				bAtNameStart = false;
+				continue;
+			}
+			if(bInQuotes) continue;
+			if(bAtNameStart && sLine.startsWith(sName, i) && i+iNameLen<sLine.length() && sLine.charAt(i+iNameLen)=='=') 
+				return i+iNameLen+1;
+			bAtNameStart = c==';' || c==' ' || c=='\t';
+		}
+		return -1;
+	}
+
+	/**
 	 * Puts a value in the http header. Pass a null value to remove the header completely
 	 */
 	public static void replaceHeaderValue(ArrayList<String> environment_lines, String sHeader, String sValue)
 	{
-		String sFind = sHeader.toLowerCase()+':';
+		int iLen = sHeader.length();
 		for(int i=0; i<environment_lines.size(); i++)
 		{
 			String s = (String)environment_lines.get(i);
-			if(s.toLowerCase().startsWith(sFind))
+			if(s.length()>iLen && s.charAt(iLen)==':' && s.regionMatches(true, 0, sHeader, 0, iLen))
 			{
 				environment_lines.remove(i);
 				if(sValue!=null) environment_lines.add(sHeader+": "+sValue);
@@ -459,7 +512,7 @@ public class Util
 	public static long getDateMSFromGMTString(String sGMT)
 	{    
 		final String LAST_MOD_DATE = "EEE, dd MMM yyyy HH:mm:ss z";
-		Date dt = makeDate(sGMT, LAST_MOD_DATE, Locale.UK, TimeZone.getTimeZone("GMT"));
+		Date dt = makeDate(sGMT, LAST_MOD_DATE, Locale.ENGLISH, TimeZone.getTimeZone("GMT")); //English: UK gives "Sept" and would not parse "Sep"
 		if(dt==null) return 0;
 		return dt.getTime();
 	}

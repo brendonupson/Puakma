@@ -40,4 +40,7 @@ public interface ActionRunnerInterface
 	public boolean hasStreamed();  
 	public void streamToClient(byte buf[]) throws IOException;  
 	public OutputStream getOutputStream();
+	
+	public int getHttpReplyCode();
+	public String getHttpReplyText();
 }

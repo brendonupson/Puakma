@@ -26,9 +26,11 @@ public class AddInStatistic implements ErrorDetect
 	private int m_iCaptureType = STAT_CAPTURE_ONCE;
 	private int m_iMaxPeriodsHistory;
 	private Date m_dtCreated = new Date();
-	private Date m_dtLastIncremented = null;
+	private volatile long m_lLastIncremented = 0; //0 = never
 	private pmaAddIn m_pParent = null;
 	private Vector m_vStatData = new Vector();
+	//the entry for the current period, so most updates don't need to work out the period bounds
+	private volatile AddInStatisticEntry m_seCurrent = null;
 
 	public AddInStatistic(pmaAddIn parent, String sStatKey, int iCaptureType, int iMaxPeriodsHistory)
 	{
@@ -78,13 +80,14 @@ public class AddInStatistic implements ErrorDetect
 
 	public Date getLastIncrementedDate()
 	{
-		return m_dtLastIncremented;	
+		long lLast = m_lLastIncremented;
+		return lLast==0 ? null : new Date(lLast);
 	}
 
 	/**
 	 * 
 	 */
-	public void prune()
+	public synchronized void prune()
 	{
 		//TODO delete old stats from the array to save memory
 
@@ -148,30 +151,43 @@ public class AddInStatistic implements ErrorDetect
 	 */
 	private void updateNumeric(Object objValue, boolean bSet)
 	{
-		Date dtNow = new Date();
-		
-		m_dtLastIncremented = dtNow;
-		if(m_iCaptureType==STAT_CAPTURE_ONCE) 
-		{
-			if(m_vStatData.size()==0) 
-			{
-				m_vStatData.add(new AddInStatisticEntry(objValue));
-				return;
-			}
-			AddInStatisticEntry se = (AddInStatisticEntry) m_vStatData.get(0);
-			if(bSet)
-				se.set(objValue);
-			else
-				se.increment(objValue);
-			return;
-		}
+		long lNow = System.currentTimeMillis();
+		m_lLastIncremented = lNow;
 
-		Date dtBounds[] = getDateBounds(dtNow);
-		AddInStatisticEntry se = findStatisticEntry(dtBounds);
+		AddInStatisticEntry se = m_seCurrent;
+		if(se==null || !se.isCurrent(lNow)) se = getCurrentEntry(lNow, objValue);
+		if(se==null) return; //first value of a capture-once statistic, already stored
+
 		if(bSet)
 			se.set(objValue);
 		else
-			se.increment(objValue);		
+			se.increment(objValue);
+	}
+
+	/**
+	 * Slow path: find or create the entry for the period containing lNow and remember it.
+	 * @return null if a new capture-once entry was created holding objValue
+	 */
+	private synchronized AddInStatisticEntry getCurrentEntry(long lNow, Object objValue)
+	{
+		AddInStatisticEntry se = m_seCurrent;
+		if(se!=null && se.isCurrent(lNow)) return se; //another thread got here first
+
+		if(m_iCaptureType==STAT_CAPTURE_ONCE)
+		{
+			if(m_vStatData.size()==0)
+			{
+				m_seCurrent = new AddInStatisticEntry(objValue);
+				m_vStatData.add(m_seCurrent);
+				return null;
+			}
+			m_seCurrent = (AddInStatisticEntry) m_vStatData.get(0);
+			return m_seCurrent;
+		}
+
+		Date dtBounds[] = getDateBounds(new Date(lNow));
+		m_seCurrent = findStatisticEntry(dtBounds);
+		return m_seCurrent;
 	}
 
 	/**
@@ -325,7 +341,7 @@ public class AddInStatistic implements ErrorDetect
 
 	public Date getStatisticLastUpdated()
 	{
-		return m_dtLastIncremented;
+		return getLastIncrementedDate();
 	}
 
 	/**
