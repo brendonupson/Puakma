@@ -26,6 +26,8 @@ import java.util.Collection;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import puakma.error.ErrorDetect;
 import puakma.error.pmaLog;
@@ -38,80 +40,52 @@ public class DbConnectionPoolManager implements ErrorDetect
 	//private boolean m_bStopped;
 	private Hashtable<String, DbConnectionPooler> m_map = new Hashtable<String, DbConnectionPooler>();
 	private SystemContext m_sysCtx;
-	private DbConnectionCleaner m_Cleaner;
-	private boolean m_bRunning = true;
+	private volatile boolean m_bRunning = true;
 	private String m_sPoolName = "";
+	private volatile long m_lShutdownAtMS = 0; //>0: the cleaner shuts this manager down once this time passes
 
+	/*
+	 * One cleaner thread is shared by every pool manager. There is a manager per loaded
+	 * application, so a thread each meant dozens of threads that spent their life asleep.
+	 */
+	private static final long CLEAN_INTERVAL_MS = 30000;
+	private static final List<DbConnectionPoolManager> s_managers = new CopyOnWriteArrayList<DbConnectionPoolManager>();
+	private static Thread s_cleaner = null;
 
-	private class DbConnectionCleaner extends Thread implements ErrorDetect
+	private static synchronized void registerManager(DbConnectionPoolManager mgr)
 	{
-		private boolean m_bCleanerRunning = true;
-		//private DbConnectionPoolManager m_mgr;
-
-
-		public DbConnectionCleaner()//(DbConnectionPoolManager mgr)
+		s_managers.add(mgr);
+		if(s_cleaner==null)
 		{
-			super("DbConnectionCleaner:"+m_sPoolName);
-			//m_mgr = mgr;
-			this.setDaemon(true);
+			s_cleaner = new Thread(DbConnectionPoolManager::runCleaner, "DbConnectionCleaner");
+			s_cleaner.setDaemon(true);
+			s_cleaner.start();
 		}
-
-		public void destroy() 
-		{
-			m_bCleanerRunning = false;
-			this.interrupt();
-		}
-
-		public String getThreadDetail() 
-		{			
-			return getErrorSource();
-		}
-
-		public void run() 
-		{
-			//System.out.println("STARTUP: DbConnectionCleaner ");
-			final int iMinimumTimeMS = 30000;
-			while(m_bCleanerRunning)
-			{				
-				try 
-				{
-					long lRandom = (long) (iMinimumTimeMS*Math.random());
-					long lSleep = lRandom + iMinimumTimeMS;
-					//System.out.println("sleeping for " + lSleep + "ms");
-					Thread.sleep(lSleep); //so all poolers don't clean together, between 30sec and a minute per clean
-					if(!isRunning()) break;
-					doExpire();
-				} 
-				catch (InterruptedException e) 
-				{				
-					//System.out.println("Interrupted!");
-				}
-				catch (Throwable t) 
-				{				
-					//eg out of memory?
-					//System.out.println(t.toString());
-				}
-				//System.out.println("Cleaning... ");				
-			}
-			//System.out.println("SHUTDOWN: "+this.getName());			
-		}
-
-
-		/**
-		 * 
-		 */
-		public String getErrorSource() 
-		{
-			return this.getClass().getName();
-		}
-
-		public String getErrorUser() 
-		{			
-			return pmaSystem.SYSTEM_ACCOUNT;
-		}
-
 	}
 
+	private static void runCleaner()
+	{
+		while(true)
+		{
+			try{ Thread.sleep(CLEAN_INTERVAL_MS); } catch(InterruptedException e){ }
+
+			long lNow = System.currentTimeMillis();
+			for(DbConnectionPoolManager mgr : s_managers)
+			{
+				try
+				{
+					if(mgr.m_lShutdownAtMS>0 && lNow>=mgr.m_lShutdownAtMS)
+						mgr.shutdown();
+					else if(mgr.isRunning())
+						mgr.doExpire();
+				}
+				catch(Throwable t)
+				{
+					//eg out of memory? keep cleaning the other pools
+				}
+			}
+		}
+	}
 
 
 	// **************************************************
@@ -127,8 +101,7 @@ public class DbConnectionPoolManager implements ErrorDetect
 	{
 		if(sPoolName!=null) m_sPoolName = sPoolName;
 		m_sysCtx = paramSysCtx;
-		m_Cleaner = new DbConnectionCleaner();
-		m_Cleaner.start();
+		registerManager(this);
 	}
 
 	public boolean isRunning() 
@@ -306,10 +279,19 @@ public class DbConnectionPoolManager implements ErrorDetect
 	}
 
 
+	/**
+	 * Shut down after lDelayMS, so a request still using a connection from this manager
+	 * can finish first. Shutting down closes every connection, including ones in use.
+	 */
+	public void shutdownLater(long lDelayMS)
+	{
+		m_lShutdownAtMS = System.currentTimeMillis() + lDelayMS;
+	}
+
 	public synchronized void shutdown()
 	{  
 		m_bRunning = false;
-		m_Cleaner.destroy();
+		s_managers.remove(this);
 
 		Collection<DbConnectionPooler> coll = m_map.values();
 		Iterator<DbConnectionPooler> it = coll.iterator();

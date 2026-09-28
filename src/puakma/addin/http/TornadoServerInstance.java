@@ -3,6 +3,7 @@ package puakma.addin.http;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Hashtable;
 
@@ -17,6 +18,8 @@ public class TornadoServerInstance
 {
 	private SystemContext m_pSystem;
 	private Hashtable<String, TornadoApplication> m_htApplications = new Hashtable<String, TornadoApplication>();
+	//how long a flushed application keeps its connection pools, for requests still using it
+	private static final long POOL_CLOSE_DELAY_MS = 5*60*1000;
 	private Cache m_cacheDesign; //global, shared by all applications, 1 big bucket
 
 	/**
@@ -107,8 +110,25 @@ public class TornadoServerInstance
 	{
 		m_cacheDesign.expireAll(0);
 		m_cacheDesign.resetCounters();
-		m_htApplications.clear();
+		//close the dropped apps' connection pools. Just clearing the table leaked every app's
+		//open connections. Delayed, as requests may still be running on the old instances.
+		for(TornadoApplication ta : removeAllApplications()) ta.closePoolsLater(POOL_CLOSE_DELAY_MS);
 		m_pSystem.clearClassLoader(null);
+	}
+
+	/**
+	 * Empty the applications table
+	 * @return the applications that were in it
+	 */
+	private ArrayList<TornadoApplication> removeAllApplications()
+	{
+		//hold the table's lock so nothing is added between the copy and the clear
+		synchronized(m_htApplications)
+		{
+			ArrayList<TornadoApplication> arr = new ArrayList<TornadoApplication>(m_htApplications.values());
+			m_htApplications.clear();
+			return arr;
+		}
 	}
 
 	/**
@@ -213,7 +233,7 @@ public class TornadoServerInstance
 
 	public void shutdown()
 	{
-		m_htApplications.clear();
+		for(TornadoApplication ta : removeAllApplications()) ta.closePools();
 		if(m_cacheDesign!=null) m_cacheDesign.expireAll(-1);		
 	}
 

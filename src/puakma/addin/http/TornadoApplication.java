@@ -1434,6 +1434,15 @@ public class TornadoApplication implements ErrorDetect
 		if(m_DBPoolMgr!=null) m_DBPoolMgr.shutdown();
 	}
 
+	/**
+	 * As closePools(), but after lDelayMS so requests still running against this
+	 * instance can finish with their connections first.
+	 */
+	public void closePoolsLater(long lDelayMS)
+	{
+		if(m_DBPoolMgr!=null) m_DBPoolMgr.shutdownLater(lDelayMS);
+	}
+
 	public void finalize()
 	{
 		//System.out.println("FINALIZE: TornadoApplication " + getErrorSource());
