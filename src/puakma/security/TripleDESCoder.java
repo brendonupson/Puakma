@@ -25,7 +25,7 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
-import puakma.coder.CoderB64;
+import puakma.util.Util;
  
 public class TripleDESCoder
 {
@@ -43,7 +43,6 @@ public class TripleDESCoder
     private SecretKey secretKey;
     private final byte[] tripleDesKeyData;
     private Cipher cipher;
-    private CoderB64 m_b64Coder = new CoderB64();
     
     private Cipher getCipher()
     {
@@ -98,12 +97,12 @@ public class TripleDESCoder
     
     private String base64Encode(byte buf[])
     {
-        return m_b64Coder.encode(buf);
+        return Util.base64Encode(buf);
     }
     
     private byte[] base64Decode(String s)
     {
-        return m_b64Coder.decode(s.getBytes());
+        return Util.base64Decode(s);
     }
     
     public synchronized String decodeString(String encryptedText) throws EncryptionException

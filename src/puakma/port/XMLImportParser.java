@@ -49,7 +49,6 @@ public class XMLImportParser implements ContentHandler //, TableRowImportCallbac
 	private InputStream m_in;
 	//private byte[] m_buffer;  
 	//private boolean m_bOK=true;
-	private puakma.coder.CoderB64 m_b64 = new puakma.coder.CoderB64();  
 	private XMLReader m_xmlReader;
 	private boolean m_bNullValue =false;
 	private TableColumnItem m_tci = null;
@@ -258,8 +257,9 @@ public class XMLImportParser implements ContentHandler //, TableRowImportCallbac
 				m_tci.setValue(null);
 			else
 			{
-				byte buf[] = Util.utf8FromString(m_sbValue.toString());
-				if(m_bBase64Encoded) buf = m_b64.decode(buf);
+				byte buf[];
+				if(m_bBase64Encoded) buf = Util.base64Decode(m_sbValue.toString());
+				else buf = Util.utf8FromString(m_sbValue.toString());
 				m_tci.setValue(buf);          
 			}
 

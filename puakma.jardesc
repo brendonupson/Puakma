@@ -28,7 +28,6 @@
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.mail"/>
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.stats"/>
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.addin.widgie"/>
-        <javaElement handleIdentifier="=Puakma/src&lt;puakma.coder"/>
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.error"/>
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.jdbc"/>
         <javaElement handleIdentifier="=Puakma/src&lt;puakma.license"/>

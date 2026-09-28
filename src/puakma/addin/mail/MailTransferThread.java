@@ -23,7 +23,10 @@ package puakma.addin.mail;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -31,10 +34,10 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
+import java.util.Base64;
 import java.util.Calendar;
 
 import puakma.addin.pmaAddInStatusLine;
-import puakma.coder.CoderB64;
 import puakma.error.ErrorDetect;
 import puakma.error.pmaLog;
 import puakma.system.SystemContext;
@@ -422,7 +425,6 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 		// Format the current time.
 
 		//int x=0, i=0;//, iReadLen=256;
-		CoderB64 b64 = new CoderB64();
 		BufferedInputStream bis;
 		MailAddress maFrom = new MailAddress("");
 		String MimeBoundary = getNextMimeBoundary();
@@ -531,27 +533,18 @@ public class MailTransferThread implements pmaThreadInterface, ErrorDetect
 				//fout.write(formatLine("Content-Disposition: inline; ", "filename=\"" + szName + '\"'));
 				fout.write(formatLine("Content-Disposition: ", "attachment; filename=\"" + szName + "\""));
 
-				byte bIn[]  = new byte[57];
-				byte bOut[] = new byte[90];
-				int iTotalRead=0;
-				int iTotalWrite=0;
-				bis = new BufferedInputStream( rs.getBinaryStream("Attachment") ); //, 256 );
-				while ( bis.available() > 0 )
+				fout.write( CRLF.getBytes() );
+				byte buf[] = new byte[8192];
+				bis = new BufferedInputStream( rs.getBinaryStream("Attachment") );
+				//76 char lines per RFC 2045. Closing the encoder writes the final padding but must not close fout
+				OutputStream b64Out = Base64.getMimeEncoder(76, CRLF.getBytes()).wrap(new FilterOutputStream(fout)
 				{
-					int iRead = bis.read( bIn);
-					iTotalRead += iRead;
-					//this.pSystem.doInformation("read attachment " + iTotalRead + "bytes", this);            
-					int iEncodedLen = b64.encode( bIn, bOut, iRead, bOut.length );
-					if(iEncodedLen>0)
-					{
-						iTotalWrite+=iEncodedLen;
-						//this.pSystem.doInformation("wrote base64 " + iTotalWrite + "bytes", this);              
-						fout.write( CRLF.getBytes() );
-						fout.write( bOut, 0, iEncodedLen );              
-					}
-				}
-				//pSystem.doInformation("COMPLETED read attachment " + iTotalRead + "bytes", this);
-				//pSystem.doInformation("COMPLETED write attachment " + iTotalWrite + "bytes", this);
+					public void write(byte b[], int off, int len) throws IOException { out.write(b, off, len); }
+					public void close() throws IOException { flush(); }
+				});
+				int iRead;
+				while ( (iRead = bis.read(buf)) != -1 ) b64Out.write(buf, 0, iRead);
+				b64Out.close();
 				bis.close();
 			}
 		}

@@ -1642,7 +1642,6 @@ public class TableManager implements ErrorDetect
 	{
 		JSONObject json = new JSONObject();
 
-		puakma.coder.CoderB64 b64 = new puakma.coder.CoderB64();
 		String sColumnName;
 		String sVal;
 
@@ -1735,7 +1734,7 @@ x
 						json.put(sColumnNameLow, "");
 					else
 					{
-						json.put(sColumnNameLow, b64.encode(buf));
+						json.put(sColumnNameLow, Util.base64Encode(buf));
 					}					
 				}
 				break;      
@@ -1762,8 +1761,6 @@ x
 	public JSONObject getJSON(boolean bIncludeBlobs) throws JSONException
 	{
 		JSONObject json = new JSONObject();
-
-		puakma.coder.CoderB64 b64 = new puakma.coder.CoderB64();		
 
 
 		TimeZone tz = null;
@@ -1829,7 +1826,7 @@ x
 			case DocumentItem.ITEM_TYPE_FILE:
 			case DocumentItem.ITEM_TYPE_BUFFER:
 				if(bIncludeBlobs)
-					json.put(sColumnNameLow, b64.encode(di.getValue()));				
+					json.put(sColumnNameLow, Util.base64Encode(di.getValue()));				
 				break;
 			default:
 				json.put(sColumnNameLow, di.getStringValue());
@@ -2012,9 +2009,8 @@ x
 						sbReturn.append("\t\t<value datatype=\"binary\" isnull=\"true\"></value>\r\n");
 					else
 					{
-						puakma.coder.CoderB64 b64 = new puakma.coder.CoderB64();
 						sbReturn.append("\t\t<value datatype=\"binary\" encoding=\"base64\" isnull=\"false\">");
-						sbReturn.append(b64.encode(buf));
+						sbReturn.append(Util.base64Encode(buf));
 						sbReturn.append("</value>\r\n");
 					}
 				}

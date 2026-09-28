@@ -34,7 +34,6 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.security.MessageDigest;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -48,6 +47,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
@@ -67,7 +67,6 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
-import puakma.coder.CoderB64;
 import puakma.system.SystemContext;
 
 public class Util
@@ -651,8 +650,7 @@ public class Util
 	{		
 		try
 		{
-			CoderB64 encoder = new CoderB64() ;
-			return encoder.encode(hashBytes(sToEncode.getBytes("UTF8")));
+			return base64Encode(hashBytes(sToEncode.getBytes("UTF8")));
 		}
 		catch(Exception e){}
 
@@ -689,21 +687,26 @@ public class Util
 	public static String base64Encode(byte bIn[])
 	{
 		if(bIn==null) return null;
-		CoderB64 encoder = new CoderB64();
-		String sOut = encoder.encode(bIn);
-		return sOut;
+		return Base64.getEncoder().encodeToString(bIn);
 	}
 
 	/**
-	 * Easy way to base64 encode
+	 * Easy way to base64 decode. Padding is optional and line breaks or other
+	 * non-base64 characters are ignored.
 	 * @param sIn
-	 * @return a base64 encoded string
+	 * @return the decoded bytes, or null if the input is not valid base64
 	 */
 	public static byte[] base64Decode(String sIn)
 	{
 		if(sIn==null) return null;
-		CoderB64 encoder = new CoderB64();
-		return encoder.decode(sIn.getBytes());
+		try
+		{
+			return Base64.getMimeDecoder().decode(sIn);
+		}
+		catch(IllegalArgumentException e)
+		{
+			return null;
+		}
 	}
 
 

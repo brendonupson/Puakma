@@ -647,7 +647,6 @@ public class TableRow implements Serializable
 	{
 		//byte buffer[]=null;
 		StringBuilder sbOut = new StringBuilder(12500);
-		puakma.coder.CoderB64 b64 = new puakma.coder.CoderB64();
 
 		sbOut.append("<row table=\"");
 		sbOut.append(m_sTableName);
@@ -676,7 +675,7 @@ public class TableRow implements Serializable
 			else
 			{
 				sbOut.append("\t\t<value isNull=\"false\" encoding=\"base64\">");
-				sbOut.append(b64.encode(tci.Value));
+				sbOut.append(Util.base64Encode(tci.Value));
 				sbOut.append("</value>\r\n");
 			}
 
