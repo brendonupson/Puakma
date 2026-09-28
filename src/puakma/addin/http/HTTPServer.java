@@ -82,8 +82,11 @@ public class HTTPServer extends Thread implements ErrorDetect
 	public String HTTP_PublicDir;
 	public String m_sHTTPMaxSessionRedirect="";
 	public int iHTTPPortTimeout=30000; //30 seconds
-	//how long an idle keep-alive connection may hold a worker thread waiting for its next request
-	public int iHTTPKeepAliveTimeout=3000;
+	//how long an idle keep-alive connection may hold a worker thread waiting for its next request.
+	//Keep this long: Android okhttp ignores the Keep-Alive header and pools idle connections for
+	//5 minutes, so a request sent after we close gets "unexpected end of stream" (GETs aren't
+	//checked before reuse, POSTs aren't retried).
+	public int iHTTPKeepAliveTimeout=30000;
 	private int m_iHTTPPort=-1;
 	public Properties propMime= new Properties();
 	//allow anonymous access to the public directory
@@ -228,7 +231,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 		catch(Exception r){}
 		try{ iHTTPKeepAliveTimeout = Integer.parseInt(m_pSystem.getSystemProperty("HTTPKeepAliveTimeout")); }
 		catch(Exception r){}
-		if(iHTTPKeepAliveTimeout<=0) iHTTPKeepAliveTimeout = 3000;
+		if(iHTTPKeepAliveTimeout<=0) iHTTPKeepAliveTimeout = 30000;
 
 		double dStaticCacheMB = 16;
 		try{ dStaticCacheMB = Double.parseDouble(m_pSystem.getSystemProperty("HTTPStaticCacheMB")); }
