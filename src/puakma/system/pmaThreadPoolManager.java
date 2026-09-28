@@ -33,24 +33,36 @@ import puakma.error.pmaLog;
  * 2. A new thread is created (assigned, then interrupted)
  * 3. We wait, then try 2.
  *
- * Pool Manager now runs as a thread so that it will clean its own dead threads.
+ * Pool Manager now runs as a thread so that it will clean its own dead threads, and
+ * retire threads above the minimum that have been idle for a while.
  */
 public class pmaThreadPoolManager extends Thread implements ErrorDetect
 {
 	private int m_iMinThreads=10;
 	private int m_iMaxThreads=100;
-	private int m_iCurrentThreadCount=0;
+	private volatile int m_iCurrentThreadCount=0;
 	private SystemContext m_pSystem;
 	private Vector<pmaThread> m_vThreads = new Vector<pmaThread>();
 	private int m_iThreadWaitTimeMS=2000; //how long to wait before bail. set to -1 to wait forever.
-	private boolean m_bShutdown=false;
+	private volatile boolean m_bShutdown=false;
 	private long m_lThreadNum=1;
 	private String m_sThreadPrefix="";
+	private long m_lIdleTimeoutMS=DEFAULT_IDLE_TIMEOUT_MS; //retire threads above min idle this long. <=0 never retires
+
+	public static final long DEFAULT_IDLE_TIMEOUT_MS=60000;
+	private static final int CLEAN_INTERVAL_MS=20000;
 
 
 	public pmaThreadPoolManager(SystemContext paramSystem, int paramMinThreads, int paramMaxThreads, int paramTimeoutMS, String sPrefix)
 	{
+		this(paramSystem, paramMinThreads, paramMaxThreads, paramTimeoutMS, sPrefix, DEFAULT_IDLE_TIMEOUT_MS);
+	}
+
+	public pmaThreadPoolManager(SystemContext paramSystem, int paramMinThreads, int paramMaxThreads, int paramTimeoutMS, String sPrefix, long lIdleTimeoutMS)
+	{
+		setName(sPrefix + "-mgr");
 		m_sThreadPrefix = sPrefix;
+		m_lIdleTimeoutMS = lIdleTimeoutMS;
 		m_pSystem = paramSystem;
 		m_iMinThreads = paramMinThreads;
 		m_iMaxThreads = paramMaxThreads;
@@ -58,6 +70,7 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 
 		if(m_iMinThreads<=0) m_iMinThreads=1;
 		if(m_iMaxThreads<=0) m_iMaxThreads=1;
+		if(m_iMinThreads>m_iMaxThreads) m_iMinThreads=m_iMaxThreads;
 
 		//create a bunch of threads that are ready to go
 		for(int i=0; i<m_iMinThreads; i++)
@@ -85,27 +98,28 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 		{
 			try {
 				t = (pmaThread)m_vThreads.get(i);
-				if(!t.isRunning() && t.isAlive()) return t;
+				if(isFree(t)) return t;
 			}catch(ArrayIndexOutOfBoundsException e) { System.err.println("getNextThread(): " + e.toString());}
 		}
 		//try to create a new thread
 		//System.out.println("*** trying to create a new thread");
 		if(m_iCurrentThreadCount<m_iMaxThreads)
 		{
-			return createThread();
+			t = createThread();
+			if(t!=null) return t;
 		}
 
 		//the pool must be full. try waiting for a thread to become free..
 		//System.out.println("*** Pool is full - waiting");
 		long ltime = System.currentTimeMillis();
-		while(true)
+		while(!m_bShutdown)
 		{		
 			iThreadCount = m_vThreads.size();
 			for(i=0; i<iThreadCount; i++)
 			{
 				try {
 					t = (pmaThread)m_vThreads.get(i);
-					if(!t.isRunning() && t.isAlive()) return t;
+					if(isFree(t)) return t;
 				}catch(ArrayIndexOutOfBoundsException e) { System.err.println("getNextThread() 2: " + e.toString());}
 				//Thread.yield();
 				//apparently .yield() can have unpredictable results across platforms
@@ -123,10 +137,19 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 			try{ wait(lWait); }catch(InterruptedException w){}
 		} //while
 
+		if(m_bShutdown) return null;
 		m_pSystem.doError("pmaThreadPoolManager.NoFreeThreads", new String[]{String.valueOf(m_iThreadWaitTimeMS), String.valueOf(m_iCurrentThreadCount)}, this);
 		return null;
 	}
 
+
+	/**
+	 * A thread can be handed out if it is idle, alive and not on its way out
+	 */
+	private static boolean isFree(pmaThread t)
+	{
+		return !t.isRunning() && t.isActive() && t.isAlive();
+	}
 
 	/**
 	 * Called by a pmaThread when it finishes its work, to wake a caller waiting in getNextThread()
@@ -136,11 +159,27 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 		notifyAll();
 	}
 
+	/**
+	 * Called by a pmaThread when its target throws. The worker carries on.
+	 */
+	public void threadError(pmaThread t, Throwable e)
+	{
+		m_pSystem.doError(t.getName() + " uncaught " + e.toString(), this);
+		e.printStackTrace();
+	}
+
 	public boolean runThread(pmaThreadInterface paramtarget)
 	{
-		pmaThread pt = getNextThread();
-		if(pt==null || paramtarget==null) return false;
-		return pt.runThread(paramtarget);
+		if(paramtarget==null) return false;
+		//getNextThread() releases the lock before the target is assigned, so the thread may
+		//have been taken or retired in between. Try once more before giving up.
+		for(int i=0; i<2; i++)
+		{
+			pmaThread pt = getNextThread();
+			if(pt==null) return false;
+			if(pt.runThread(paramtarget)) return true;
+		}
+		return false;
 	}
 
 
@@ -151,12 +190,15 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	{
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "run()", this);
 
-		int iSleepInterval = (20000);
 		//continue until someone tells the thread to die
 		while(!m_bShutdown)
 		{      
-			try{ Thread.sleep(iSleepInterval); } catch(Exception e){ }      
-			if(!m_bShutdown) cleanPool();
+			try{ Thread.sleep(CLEAN_INTERVAL_MS); } catch(InterruptedException e){ }      
+			if(m_bShutdown) break;
+			//an escaping Throwable (eg OOME creating a native thread) would kill this thread and
+			//silently stop all cleaning
+			try{ cleanPool(); }
+			catch(Throwable t){ m_pSystem.doError("cleanPool() failed: " + t.toString(), this); }
 		}
 
 	}
@@ -169,12 +211,15 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	{
 		m_bShutdown = true;
 
-		for(int i=0; i<m_vThreads.size(); i++)
+		pmaThread[] threads = snapshot();
+		for(int i=0; i<threads.length; i++)
 		{
-			pmaThread t = (pmaThread)m_vThreads.get(i);
+			pmaThread t = threads[i];
 			t.requestQuit();
 			t.interrupt();
 		}
+		this.interrupt(); //stop the housekeeping sleep
+		threadFinished(); //wake anyone waiting in getNextThread()
 	}
 
 	/**
@@ -182,9 +227,10 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 */
 	public void killThread(String sThreadID)
 	{     
-		for(int i=0; i<m_vThreads.size(); i++)
+		pmaThread[] threads = snapshot();
+		for(int i=0; i<threads.length; i++)
 		{
-			pmaThread t = (pmaThread)m_vThreads.get(i);
+			pmaThread t = threads[i];
 			//System.out.println("Checking: "+t.getName());
 			if(t.isAlive() && t.getName().equals(sThreadID)) 
 			{
@@ -202,10 +248,11 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 */
 	public String getThreadDetail()
 	{        		
-		StringBuilder sbOut = new StringBuilder(m_vThreads.size()*50);
-		for(int i=0; i<m_vThreads.size(); i++)
+		pmaThread[] threads = snapshot();
+		StringBuilder sbOut = new StringBuilder(threads.length*50);
+		for(int i=0; i<threads.length; i++)
 		{
-			pmaThread t = (pmaThread)m_vThreads.get(i);
+			pmaThread t = threads[i];
 			//if not alive AND not running
 			if(t.isAlive() && t.isRunning()) 
 			{
@@ -240,26 +287,65 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 
 		if(m_bShutdown) return;
 
+		//retire threads above __min__ that have been idle a while. Work from the tail:
+		//getNextThread() scans from the head, so idle threads collect at the end.
+		//Retired threads exit on their own. Drop them from the pool now, otherwise they would
+		//count against max (and block new threads being created) until the next pass.
+		if(m_lIdleTimeoutMS>0)
+		{
+			int iActive = 0;
+			for(int i=0; i<m_vThreads.size(); i++)
+			{
+				if(((pmaThread)m_vThreads.get(i)).isActive()) iActive++;
+			}
+			for(int i = m_vThreads.size() - 1; i >= 0 && iActive > m_iMinThreads; i--)
+			{
+				if(((pmaThread)m_vThreads.get(i)).tryRetire(m_lIdleTimeoutMS))
+				{
+					m_vThreads.removeElementAt(i);
+					m_iCurrentThreadCount--;
+					iActive--;
+				}
+			}
+		}
+
 		//now boost pool back up to __min__ threads
 		for(int i = m_iCurrentThreadCount; i < m_iMinThreads; i++)
 		{
 			if(m_bShutdown) break;
-			createThread();
+			if(createThread()==null) break;
 			//pSystem.doDebug(0, "Creating thread count="+iCurrentThreadCount , this);
 		}
 	}
 
 	/**
 	 * Creates a new thread and adds it to the arraylist
+	 * @return null if the thread could not be started (eg the OS is out of native threads)
 	 */
-	private pmaThread createThread()
+	private synchronized pmaThread createThread()
 	{
-		m_iCurrentThreadCount++;
 		pmaThread t = new pmaThread(m_sThreadPrefix+"-" + m_lThreadNum++, this);
+		try
+		{
+			t.start();
+		}
+		catch(Throwable e)
+		{
+			m_pSystem.doError("Unable to start pool thread " + t.getName() + ": " + e.toString(), this);
+			return null;
+		}
+		m_iCurrentThreadCount++;
 		m_vThreads.add(t);
-		t.start();
 		//System.out.println("## NEW THREAD: " + t.toString());
 		return t;
+	}
+
+	/**
+	 * A copy of the pool, safe to iterate without holding the lock
+	 */
+	private pmaThread[] snapshot()
+	{
+		return m_vThreads.toArray(new pmaThread[0]);
 	}
 
 
@@ -290,10 +376,10 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	{
 		int iActive=0;		 
 
-		for(int i=0; i<m_vThreads.size(); i++)
+		pmaThread[] threads = snapshot();
+		for(int i=0; i<threads.length; i++)
 		{
-			pmaThread t = (pmaThread)m_vThreads.get(i);
-			if(t.isRunning()) iActive++;
+			if(threads[i].isRunning()) iActive++;
 		}
 		return iActive;
 	}
@@ -304,12 +390,14 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 	 */
 	public Vector getActiveObjects()
 	{
-		Vector vReturn= new Vector(m_vThreads.size());
+		pmaThread[] threads = snapshot();
+		Vector vReturn= new Vector(threads.length);
 
-		for(int i=0; i<m_vThreads.size(); i++)
+		for(int i=0; i<threads.length; i++)
 		{
-			pmaThread t = (pmaThread)m_vThreads.get(i);
-			if(t.isRunning()) vReturn.add(t.getObject());
+			pmaThread t = threads[i];
+			Object obj = t.getObject();
+			if(t.isRunning() && obj!=null) vReturn.add(obj);
 		}
 		return vReturn;
 	}
@@ -341,12 +429,13 @@ public class pmaThreadPoolManager extends Thread implements ErrorDetect
 		long threadCount=0;
 		double executionTotal=0;
 
-		for(int i=0; i<m_vThreads.size(); i++)
+		pmaThread[] threads = snapshot();
+		for(int i=0; i<threads.length; i++)
 		{
-			t = (pmaThread)m_vThreads.get(i);
+			t = threads[i];
 			if(t.getExecutionCount()>0)
 			{
-				executionTotal = t.getAverageExecutionTime();
+				executionTotal += t.getAverageExecutionTime();
 				threadCount++;
 			}
 		}

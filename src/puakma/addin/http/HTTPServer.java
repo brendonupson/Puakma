@@ -73,8 +73,8 @@ public class HTTPServer extends Thread implements ErrorDetect
 	private String m_sInterface=null;
 
 	private long request_id = 0;
-	private int max_pooled_threads = 0;
-	private int min_pooled_threads = 0;
+	private int max_pooled_threads = 100;
+	private int min_pooled_threads = 10;
 	private int thread_pool_timeout = 5000;
 	private pmaThreadPoolManager m_tpm;
 	private String m_sSystemHostName;
@@ -209,12 +209,11 @@ public class HTTPServer extends Thread implements ErrorDetect
 			m_pSystem.doInformation("HTTPServer.NoMimeFile", new String[]{szMimeFile}, this);
 		}
 		// startup the
-		try
-		{
-			max_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxThreads"));
-			min_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMinThreads"));
-			thread_pool_timeout = Integer.parseInt(m_pSystem.getSystemProperty("HTTPThreadCreateTimeout"));
-		}catch(Exception e){}
+		//parse each separately so one missing/bad property does not discard the others
+		try{ max_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMaxThreads")); }catch(Exception e){}
+		try{ min_pooled_threads = Integer.parseInt(m_pSystem.getSystemProperty("HTTPMinThreads")); }catch(Exception e){}
+		try{ thread_pool_timeout = Integer.parseInt(m_pSystem.getSystemProperty("HTTPThreadCreateTimeout")); }catch(Exception e){}
+		if(min_pooled_threads>max_pooled_threads) min_pooled_threads = max_pooled_threads;
 		m_tpm = new pmaThreadPoolManager(m_pSystem, min_pooled_threads, max_pooled_threads, thread_pool_timeout, "http-"+m_iHTTPPort);
 		m_tpm.start();
 

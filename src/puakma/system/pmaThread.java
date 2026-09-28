@@ -21,21 +21,28 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 package puakma.system;
 
 /**
- * For use with the thread pool manager. The trick is the thread is ALWAYS running,
- * but we occasionally assign a new Runnable target. After assigning the new target,
- * we interrupt the thread (which is sleeping). It then executes the new target's run()
- * method.
+ * For use with the thread pool manager. The thread is ALWAYS running, but we
+ * occasionally assign a new target. Assigning a target wakes the thread (it waits on
+ * a private monitor) and it then executes the target's run() method.
+ *
+ * interrupt() is deliberately NOT used to hand over work: a worker could pick up the
+ * new target before the interrupt arrived, and the interrupt would then land inside the
+ * request (breaking sleep()/wait() or interrupt aware drivers). interrupt() is only used
+ * by killThread()/shutdown to break a running target.
  */
 public final class pmaThread extends Thread
 {
 	//volatile: read by the pool manager's thread to find a free worker
 	private volatile boolean m_bIsRunning=false;
 	private volatile boolean m_bThreadActive=true;
-	private long m_lastRunTimeMS=0;
-	private long m_executionCount=0; //the number of times the thread has 'worked'
-	private double m_totalExecutionTime=0;
+	private volatile long m_lastRunTimeMS=0;
+	private volatile long m_executionCount=0; //the number of times the thread has 'worked'
+	private volatile double m_totalExecutionTime=0;
+	private volatile long m_lIdleSinceMS=System.currentTimeMillis();
 	private volatile pmaThreadInterface m_target=null;
 	private pmaThreadPoolManager m_manager=null; //told when this thread becomes free
+	//guards the hand over of m_target. Not the Thread's own monitor, join() uses that
+	private final Object m_lock = new Object();
 
 	public pmaThread()
 	{
@@ -76,41 +83,53 @@ public final class pmaThread extends Thread
 	}
 
 	/**
-	 * Ask the thread to die
+	 * Ask the thread to die. A target that is already assigned is still run.
 	 */
 	public void requestQuit()
 	{
-		m_bThreadActive = false;
+		synchronized(m_lock)
+		{
+			m_bThreadActive = false;
+			m_lock.notifyAll();
+		}
+	}
+
+	/**
+	 * Ask an idle thread to die, if it has been idle for at least lIdleMS.
+	 * The check and the quit are done under the same lock as runThread(), so a thread
+	 * cannot be retired after it has been given work.
+	 * @return true if the thread will now exit
+	 */
+	public boolean tryRetire(long lIdleMS)
+	{
+		synchronized(m_lock)
+		{
+			if(!m_bThreadActive || m_bIsRunning || m_target!=null) return false;
+			if(System.currentTimeMillis() - m_lIdleSinceMS < lIdleMS) return false;
+			m_bThreadActive = false;
+			m_lock.notifyAll();
+			return true;
+		}
 	}
 
 
 	/**
 	 * Loads and Runs the thread...
-	 * @return true if the target was assigned and run
+	 * @return true if the target was assigned and will be run
 	 * @return false if the target could not be executed
 	 */
-	public final synchronized boolean runThread(pmaThreadInterface paramtarget)
+	public final boolean runThread(pmaThreadInterface paramtarget)
 	{
-		if(paramtarget==null) //no work to do!
+		if(paramtarget==null) return false; //no work to do!
+
+		synchronized(m_lock)
 		{
-			m_lastRunTimeMS = 0;
-			return false;
-		}
-		else
-		{
-			if(m_bIsRunning) //already doing work for someone else
-			{
-				//System.out.println(this.toString() + " -->> WORKING FOR SOMEONE ELSE");
-				return false;
-			}
-			else
-			{
-				//no inner synchronized(this) block needed - this method is already
-				//synchronized on the same monitor and intrinsic locks are reentrant
-				m_bIsRunning = true;
-				m_target = paramtarget;
-				this.interrupt();
-			}
+			//already doing work for someone else, or on its way out
+			if(m_bIsRunning || !m_bThreadActive) return false;
+
+			m_bIsRunning = true;
+			m_target = paramtarget;
+			m_lock.notifyAll();
 		}
 		return true;
 	}
@@ -121,26 +140,52 @@ public final class pmaThread extends Thread
 	 */
 	public final void run()
 	{
-		long lStart, lEnd;
-		while(m_bThreadActive)
+		long lStart;
+		while(true)
 		{
-			if(m_target!=null)
+			pmaThreadInterface target;
+			synchronized(m_lock)
 			{
-				m_executionCount++;
-				//System.out.println(this.toString() + " start");
-				m_bIsRunning = true;
-				lStart = System.currentTimeMillis();
-				m_target.run();
-				m_target=null;
-				lEnd = System.currentTimeMillis();
+				while(m_target==null && m_bThreadActive)
+				{
+					try{ m_lock.wait(); } catch(InterruptedException e){ }
+				}
+				if(m_target==null) break; //asked to quit and no work pending
+				target = m_target;
+			}
+
+			Thread.interrupted(); //don't let a stale interrupt leak into this request
+			m_executionCount++;
+			lStart = System.currentTimeMillis();
+			try
+			{
+				target.run();
+			}
+			catch(Throwable t)
+			{
+				//keep the worker alive: a dead worker would leak its slot until the pool is cleaned
+				try
+				{
+					if(m_manager!=null) 
+						m_manager.threadError(this, t);
+					else
+						t.printStackTrace();
+				}
+				catch(Throwable e){ } //logging failed (eg OOME), still keep the worker
+			}
+			finally
+			{
+				long lEnd = System.currentTimeMillis();
 				m_lastRunTimeMS = lEnd - lStart;
 				m_totalExecutionTime += m_lastRunTimeMS;
-				m_bIsRunning = false;
+				synchronized(m_lock)
+				{
+					m_target = null;
+					m_lIdleSinceMS = lEnd;
+					m_bIsRunning = false;
+				}
 				if(m_manager!=null) m_manager.threadFinished();
-				//System.out.println(this.toString() + " end. " + getLastRunTime() + "ms");
 			}
-			//sleep for a really long time. We will interrupt it if we have more work to do later...
-			try{ sleep(99999); } catch(Exception e){ /*System.out.println(this.toString() + ": WAKE UP!"); */ }
 		}
 	}
 
@@ -189,8 +234,9 @@ public final class pmaThread extends Thread
 
 	public String getThreadDetail()
 	{
-		if(m_target==null) return "";
-		return m_target.getThreadDetail();
+		pmaThreadInterface target = m_target;
+		if(target==null) return "";
+		return target.getThreadDetail();
 	}
 
 	public final void killThread()

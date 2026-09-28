@@ -151,6 +151,7 @@ public class MAILER extends pmaAddIn implements ErrorDetect
 
 		MailCleaner mc = null;
 		m_tpm = new pmaThreadPoolManager(m_pSystem, min_pooled_threads, max_pooled_threads, thread_pool_timeout, "mail");
+		m_tpm.start(); //housekeeping: replaces workers that have died
 		t = m_tpm.getNextThread();
 		if(t!=null)
 		{
