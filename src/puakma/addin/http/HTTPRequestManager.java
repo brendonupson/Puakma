@@ -114,6 +114,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private float m_fHTTPVersion=1;
 	private int m_iConnectionsLeft = 1;
 	private int m_iKeepAliveTimeoutSeconds=1;
+	private boolean m_bIdleTimedOut=false; //gave up waiting for a request, see doCleanup()
 	private String m_sClientIPAddress = null;
 	private String m_sClientHostName = null;
 
@@ -268,6 +269,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					if(iCount>1) m_sock.setSoTimeout(m_http_server.iHTTPPortTimeout);
 					if(m_http_request_line==null || m_http_request_line.length()==0 || !m_pSystem.isSystemRunning()) break;
 				}
+				catch(java.net.SocketTimeoutException te) { m_bIdleTimedOut = true; break; }
 				catch(Exception g) { break; }
 				m_iConnectionsLeft--;
 
@@ -2824,6 +2826,20 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doCleanup()", this);
 		if(m_action!=null) m_action.requestQuit();
 
+		/*
+		 * When we give up on an idle connection, reset it rather than closing it gracefully.
+		 * A graceful close from our side leaves the connection in TIME_WAIT on this server for
+		 * 60s. Clients behind NAT reuse public ports within seconds, and when the new SYN's TCP
+		 * timestamp looks older than the last one seen (clients randomise them per connection)
+		 * Linux silently drops it as a stale duplicate (PAWS) - the client just sees a connect
+		 * timeout. A reset leaves no TIME_WAIT. Safe here as the connection is idle: every
+		 * response has long since been sent. Same idea as nginx reset_timedout_connection.
+		 * Must be set before the streams are closed, as closing either closes the socket.
+		 */
+		if(m_bIdleTimedOut)
+		{
+			try{ m_sock.setSoLinger(true, 0); }catch(Exception e){}
+		}
 
 		try
 		{
