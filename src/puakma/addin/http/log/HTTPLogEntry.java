@@ -25,10 +25,14 @@ import java.util.ArrayList;
 
 import puakma.system.RequestPath;
 import puakma.system.SessionContext;
+import puakma.system.X500Name;
 
 
 /**
- * This will be created and populated by the HTTP server, then passed into HTTPLogger
+ * This will be created and populated by the HTTP server, then passed into HTTPLogger.
+ * The entry is written by a background thread after the request thread has moved on, so the constructor 
+ * takes copies of everything that the request thread reuses (the header lists and the session's user name).
+ * After construction the entry is effectively immutable.
  */
 public class HTTPLogEntry
 {
@@ -53,8 +57,8 @@ public class HTTPLogEntry
 	private ArrayList<String> m_arrOutboundHeaders = new ArrayList<String>();
 	private String m_sProtocol="";
 	private String m_sURI="";
-	private RequestPath m_rp = new RequestPath("/");
-	private SessionContext m_pSession;
+	private RequestPath m_rp = null; //lazy, see getRequestPath()
+	private String m_sCanonicalUserName = null;
 
 	public HTTPLogEntry(){}//default, should never be used
 
@@ -63,9 +67,9 @@ public class HTTPLogEntry
 	 */
 	public HTTPLogEntry(ArrayList<String> alMimeExcludes, ArrayList<String> alInboundHeaders, ArrayList<String> alOutboundHeaders, String szHTTPRequest, String szContentType, long lSize, long lInboundSize, int iReturnCode, String szClientIPAddress, String szClientHostName, String szSystemHostName, String szRequestedHost, long lTrans, String sServerIPAddress, int iPort, SessionContext sess)
 	{
-		if(alInboundHeaders!=null) m_arrInboundHeaders = alInboundHeaders;
-		if(alOutboundHeaders!=null) m_arrOutboundHeaders = alOutboundHeaders;
-		m_pSession = sess;
+		if(alInboundHeaders!=null) m_arrInboundHeaders = new ArrayList<String>(alInboundHeaders);
+		if(alOutboundHeaders!=null) m_arrOutboundHeaders = new ArrayList<String>(alOutboundHeaders);
+		if(sess!=null) m_sCanonicalUserName = sess.getUserName();
 		m_sHTTPRequest = szHTTPRequest;
 		if(m_sHTTPRequest==null) m_sHTTPRequest="";
 		if(szContentType==null) szContentType="www/unknown";
@@ -96,7 +100,6 @@ public class HTTPLogEntry
 			if(arr.size()>1) m_sURI = (String)arr.get(1);
 			if(arr.size()>2) m_sProtocol = (String)arr.get(2);
 		}
-		m_rp = new RequestPath(m_sURI);
 		if(m_sMethod==null) m_sMethod="-";
 		m_bIgnoreStat = shouldExclude(alMimeExcludes);
 	}
@@ -116,6 +119,12 @@ public class HTTPLogEntry
 			if(sMimeExclude.equalsIgnoreCase(m_sContentType)) return true;
 		}
 		return false;
+	}
+
+	private RequestPath getRequestPath()
+	{
+		if(m_rp==null) m_rp = new RequestPath(m_sURI); //only ever called from the single log writer thread
+		return m_rp;
 	}
 
 	public boolean shouldLog()
@@ -141,7 +150,7 @@ public class HTTPLogEntry
 
 	public String getFileName()
 	{
-		return m_rp.DesignElementName;
+		return getRequestPath().DesignElementName;
 	}
 
 	public long getResponseBytes()
@@ -192,7 +201,7 @@ public class HTTPLogEntry
 
 	public String getPathToDesign()
 	{
-		return m_rp.getPathToDesign();
+		return getRequestPath().getPathToDesign();
 	}
 
 	public String getQueryString()
@@ -211,14 +220,14 @@ public class HTTPLogEntry
 	public String getUserNameNoSpaces()
 	{
 		String sLoginName = null;
-		if(m_pSession!=null) sLoginName = m_pSession.getUserNameAbbreviated();
+		if(m_sCanonicalUserName!=null) sLoginName = new X500Name(m_sCanonicalUserName).getAbbreviatedName();
 		if(sLoginName==null || sLoginName.length()==0) sLoginName = "Anonymous";
 		return sLoginName.replaceAll(" ", "_");
 	}
 
 	public String getCanonicalUserName()
 	{
-		if(m_pSession!=null) return m_pSession.getUserName();
+		if(m_sCanonicalUserName!=null) return m_sCanonicalUserName;
 		return "Anonymous";
 	}
 

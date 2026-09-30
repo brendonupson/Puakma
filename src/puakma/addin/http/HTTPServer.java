@@ -388,14 +388,20 @@ public class HTTPServer extends Thread implements ErrorDetect
 	{
 		if(m_bLogToFile) writeTextStatLog(stat);
 		if(m_bLogToRDB) m_Parent.writeRDBStatLog(stat);
-		if(m_bLogInbound) writeRDBInboundStatLog(sInboundPath, sInboundMethod, iInboundSize, stat.getCanonicalUserName());
+		if(m_bLogInbound)
+		{
+			//the inbound insert is a database round trip, so do it on the log writer thread
+			final String sUser = stat.getCanonicalUserName();
+			final long lWhen = System.currentTimeMillis();
+			m_Parent.submitLogTask(() -> writeRDBInboundStatLog(sInboundPath, sInboundMethod, iInboundSize, sUser, lWhen));
+		}
 	}
 
 
 	/**
 	 * Writes entries to log web requests to relational DB Table HTTPStat
 	 */
-	private void writeRDBInboundStatLog(String sInboundPath, String sInboundMethod, int iInboundSize, String szUserName)
+	private void writeRDBInboundStatLog(String sInboundPath, String sInboundMethod, int iInboundSize, String szUserName, long lWhen)
 	{
 
 		Connection cx = null;
@@ -404,7 +410,7 @@ public class HTTPServer extends Thread implements ErrorDetect
 		{
 			cx = m_pSystem.getSystemConnection();
 			PreparedStatement prepStmt = cx.prepareStatement("INSERT INTO HTTPSTATIN(RequestDate,Method,Request,ContentLength,UserName,ServerName) VALUES(?,?,?,?,?,?)");
-			prepStmt.setTimestamp(1, new java.sql.Timestamp(System.currentTimeMillis()));
+			prepStmt.setTimestamp(1, new java.sql.Timestamp(lWhen));
 			prepStmt.setString(2, sInboundMethod);
 			prepStmt.setString(3, sInboundPath);
 			prepStmt.setInt(4, iInboundSize);

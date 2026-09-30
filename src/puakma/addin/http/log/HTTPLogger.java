@@ -35,6 +35,7 @@ public class HTTPLogger
 	private String m_sLogFormat="%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-agent}i\\\""; //NCSA extended/combined log format
 	//"%v %h %l \\\"%u\\\" %t \\\"%r\\\" %>s %B";
 	private ArrayList<HTTPLogField> m_arrParts = new ArrayList<HTTPLogField>();
+	private volatile HTTPLogField[] m_parts = new HTTPLogField[0]; //snapshot of m_arrParts for fast, lock free iteration
 
 	/**
 	 *  Create a new logger     
@@ -66,12 +67,13 @@ public class HTTPLogger
 	public void parseLogFormatString()
 	{
 		//look for % signs backup to last char before 
+		m_arrParts.clear(); //safe to call more than once
 		String sLogRemainder = m_sLogFormat;
 		//todo \xhh replacements
-		sLogRemainder = sLogRemainder.replaceAll("\\\\r",  "\r");
-		sLogRemainder = sLogRemainder.replaceAll("\\\\n",  "\n");
-		sLogRemainder = sLogRemainder.replaceAll("\\\\t",  "\t");
-		sLogRemainder = sLogRemainder.replaceAll("\\\\\"",  String.valueOf('"'));
+		sLogRemainder = sLogRemainder.replace("\\r",  "\r");
+		sLogRemainder = sLogRemainder.replace("\\n",  "\n");
+		sLogRemainder = sLogRemainder.replace("\\t",  "\t");
+		sLogRemainder = sLogRemainder.replace("\\\"",  "\"");
 		int iPos = sLogRemainder.indexOf('%');
 		while(iPos>=0)
 		{
@@ -116,6 +118,22 @@ public class HTTPLogger
 
 			iPos = sLogRemainder.indexOf('%');
 		}
+		m_parts = m_arrParts.toArray(new HTTPLogField[m_arrParts.size()]);
+	}
+
+	/**
+	 * Builds the log line (without a line terminator) for this entry. Returns null if the entry should not be logged. 
+	 */
+	public String formatRequest(HTTPLogEntry le)
+	{
+		if(le==null || !le.shouldLog()) return null;
+		StringBuilder sb = new StringBuilder(256);
+		HTTPLogField[] parts = m_parts;
+		for(int i=0; i<parts.length; i++)
+		{
+			sb.append(parts[i].getValue(le));
+		}
+		return sb.toString();
 	}
 
 	/**
@@ -123,18 +141,10 @@ public class HTTPLogger
 	 */
 	public void logRequest(OutputStream fout, HTTPLogEntry le) throws Exception
 	{
-		if(fout==null || le==null || !le.shouldLog()) return;
-		StringBuilder sb = new StringBuilder(512);
-
-		for(int i=0; i<m_arrParts.size(); i++)
-		{
-			HTTPLogField hLF = (HTTPLogField)m_arrParts.get(i);            
-			sb.append(hLF.getValue(le));
-		}
-		//write sb to log
-		//System.out.println(m_sLogFormat);
-		//System.out.println(sb.toString());
-		fout.write((sb.toString()+"\r\n").getBytes());
+		if(fout==null) return;
+		String sLine = formatRequest(le);
+		if(sLine==null) return;
+		fout.write((sLine+"\r\n").getBytes("UTF-8"));
 	}
 
 	/**
@@ -145,7 +155,6 @@ public class HTTPLogger
 		if(cx==null || stat==null || !stat.shouldLog()) return;
 		String sSQL = "INSERT INTO HTTPSTAT(IPAddress,RequestDate,UserAgent,Request,RequestReturnCode,ContentLength,ContentType,UserName,Host,TransactionMS,Referer,ServerName) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)";
 
-		PreparedStatement prepStmt = cx.prepareStatement(sSQL);
 		/*
         CREATE TABLE HTTPSTAT(
         HTTPStatID INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
@@ -160,25 +169,31 @@ public class HTTPLogger
         Host VARCHAR(100));
 		 */
 
-		//damn spammers send crap to the server. Grrrr!
-		String sUserAgent = stat.getRequestHeader("User-Agent");
-		if(sUserAgent!=null && sUserAgent.length()>120) sUserAgent = sUserAgent.substring(0, 119);
+		PreparedStatement prepStmt = cx.prepareStatement(sSQL);
+		try
+		{
+			//damn spammers send crap to the server. Grrrr!
+			String sUserAgent = stat.getRequestHeader("User-Agent");
+			if(sUserAgent!=null && sUserAgent.length()>120) sUserAgent = sUserAgent.substring(0, 119);
 
-		prepStmt.setString(1, stat.getClientIP());
-		prepStmt.setTimestamp(2, new Timestamp(stat.getRequestDate().getTime()));
-		prepStmt.setString(3, sUserAgent);
-		prepStmt.setString(4, stat.getRequestLine());
-		prepStmt.setInt(5, stat.getReturnStatus());
-		prepStmt.setLong(6, stat.getResponseBytes());
-		prepStmt.setString(7, stat.getReplyHeader("Content-Type"));
-		prepStmt.setString(8, stat.getCanonicalUserName());
-		prepStmt.setString(9, stat.getClientHostName());
-		prepStmt.setLong(10, stat.getServeMS());
-		prepStmt.setString(11, stat.getRequestHeader("Referer"));
-		prepStmt.setString(12, stat.getServerName());
-
-		prepStmt.execute();    
-		prepStmt.close();
+			prepStmt.setString(1, stat.getClientIP());
+			prepStmt.setTimestamp(2, new Timestamp(stat.getRequestDate().getTime()));
+			prepStmt.setString(3, sUserAgent);
+			prepStmt.setString(4, stat.getRequestLine());
+			prepStmt.setInt(5, stat.getReturnStatus());
+			prepStmt.setLong(6, stat.getResponseBytes());
+			prepStmt.setString(7, stat.getReplyHeader("Content-Type"));
+			prepStmt.setString(8, stat.getCanonicalUserName());
+			prepStmt.setString(9, stat.getClientHostName());
+			prepStmt.setLong(10, stat.getServeMS());
+			prepStmt.setString(11, stat.getRequestHeader("Referer"));
+			prepStmt.setString(12, stat.getServerName());
+			prepStmt.execute();
+		}
+		finally
+		{
+			try{ prepStmt.close(); }catch(Exception e){}
+		}
 	}
 
 }//class HTTPLogger

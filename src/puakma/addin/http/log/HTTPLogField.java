@@ -21,13 +21,23 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 package puakma.addin.http.log;
 
+import java.text.SimpleDateFormat;
+
 
 public class HTTPLogField 
 {
     private final static int TYPE_TEXT = 0;
     private final static int TYPE_OTHER = -1;
+    private final static String DEFAULT_DATE_FORMAT = "dd/MMM/yyyy:HH:mm:ss ZZZ"; //01/Jan/2004:00:23:15 +2300
     private String m_sSpecifier="";
     private int m_iType=TYPE_TEXT;
+    
+    //pre-computed from the specifier, so getValue() does no parsing for each request
+    private char m_cType = 0x00;
+    private String m_sMiddle = "";
+    private String m_sTrailer = "";
+    private String m_sVariable = ""; //the {xxx} part
+    private SimpleDateFormat m_sdf = null; //for %t, guarded by synchronized(this)
     
     
     /** Creates a new instance of HTTPLogField */
@@ -42,11 +52,39 @@ public class HTTPLogField
         int iPercentPos = m_sSpecifier.indexOf('%');
         int iDoublePercentPos = m_sSpecifier.indexOf("%%");
         if(iPercentPos>=0 && !(iPercentPos==iDoublePercentPos)) m_iType=TYPE_OTHER;
-        m_sSpecifier = m_sSpecifier.replaceAll("%%", "%");
+        m_sSpecifier = m_sSpecifier.replace("%%", "%");
+        if(m_iType!=TYPE_OTHER) return;
+        
+        //m_sSpecifier will start with a % eg "%v ". Find the type letter, skipping any {xxx} and modifiers like > 
+        int iPos = getEndOfSpecifier();
+        String sSpecifier = m_sSpecifier;
+        if(iPos>=0)
+        {            
+            sSpecifier = m_sSpecifier.substring(0, iPos+1);
+            m_sTrailer = m_sSpecifier.substring(iPos+1);
+        }
+        int iLen = sSpecifier.length();
+        m_sMiddle = sSpecifier;
+        if(iLen>1)
+        {
+            m_cType = sSpecifier.charAt(iLen-1);
+            m_sMiddle = sSpecifier.substring(1, iLen-1);
+        }
+        
+        int iStart = m_sSpecifier.indexOf('{');
+        int iEnd = m_sSpecifier.indexOf('}');
+        if(iStart>=0 && iEnd>iStart) m_sVariable = m_sSpecifier.substring(iStart+1, iEnd);
+        
+        if(m_cType=='t')
+        {
+            String sFormat = m_sVariable.length()>0 ? m_sVariable : DEFAULT_DATE_FORMAT;
+            try{ m_sdf = new SimpleDateFormat(sFormat); }
+            catch(IllegalArgumentException e){ m_sdf = new SimpleDateFormat(DEFAULT_DATE_FORMAT); }
+        }
     }
     
     /**
-     *
+     * Returns the text for this field. Safe to call from any thread.
      */
     public String getValue(HTTPLogEntry le)
     {
@@ -65,31 +103,11 @@ public class HTTPLogField
     
     
     
-    /**
-     * m_sSpecifier will start with a % eg "%v "
-     */
     private String getOtherValue(HTTPLogEntry le)
     {
-        //System.out.println("|"+m_sSpecifier+"|");
-        int iPos = getEndOfSpecifier();//m_sSpecifier.indexOf(' ');
-        String sSpecifier = m_sSpecifier;
-        String sTrailer="";
-        if(iPos>=0)
-        {            
-            sSpecifier = m_sSpecifier.substring(0, iPos+1);
-            sTrailer = m_sSpecifier.substring(iPos+1);
-        }
-        int iLen = sSpecifier.length();
-        char cType = 0x00;
-        String sMiddle = sSpecifier;
-        if(iLen>1)
-        {
-            cType = sSpecifier.charAt(sSpecifier.length()-1);
-            if(iLen>1) sMiddle = sSpecifier.substring(1, sSpecifier.length()-1);
-        }
         String sReturn="";
         long lBytes = 0;
-        switch(cType)
+        switch(m_cType)
         {
             case 'a':
                 sReturn = le.getClientIP();
@@ -119,20 +137,17 @@ public class HTTPLogField
                 else sReturn = String.valueOf(lBytes);
                 break;
             case 'D':
-                long lMS = le.getServeMS();
-                sReturn = String.valueOf(lMS);
+                sReturn = String.valueOf(le.getServeMS());
                 break;
             case 'T': 
-                lMS = le.getServeMS();
-                sReturn = String.valueOf(lMS/1000);//in seconds
+                sReturn = String.valueOf(le.getServeMS()/1000);//in seconds
                 break;
             case 'v':
             case 'V':
                 sReturn = le.getRequestedServerName();
                 break;
             case 's':
-                int iReturn = le.getReturnStatus();
-                sReturn = String.valueOf(iReturn);
+                sReturn = String.valueOf(le.getReturnStatus());
                 break;
             case 'r':
                 sReturn = le.getRequestLine();
@@ -144,17 +159,13 @@ public class HTTPLogField
                 sReturn = le.getRequestMethod();
                 break;
             case 'i':
-                String sHeaderName = getVariable("");                
-                sReturn = le.getRequestHeader(sHeaderName);
-                //System.out.println("header="+sHeaderName + " return=["+sReturn+"]");
+                sReturn = le.getRequestHeader(m_sVariable);
                 break;
             case 'o':
-                String sReplyHeaderName = getVariable("");
-                sReturn = le.getReplyHeader(sReplyHeaderName);
+                sReturn = le.getReplyHeader(m_sVariable);
                 break;
             case 'e':
-                String sEnvName = getVariable("");
-                sReturn = getEnvironmentVar(sEnvName);
+                sReturn = getEnvironmentVar(m_sVariable);
                 break;
             case 'U':
                 sReturn = le.getPathToDesign();
@@ -163,44 +174,54 @@ public class HTTPLogField
                 sReturn = le.getQueryString();
                 break;
             case 'C':
-                String sCookieName = getVariable("");
-                sReturn = le.getCookieValue(sCookieName);
+                sReturn = le.getCookieValue(m_sVariable);
                 break;
             case 'P':
                 sReturn = Thread.currentThread().getName();//supposed to return a pid... not in Java!
                 break;
             case 't':
-                java.util.Date dt = le.getRequestDate();
-                String sDateFormat = getVariable("dd/MMM/yyyy:HH:mm:ss ZZZ"); //01/Jan/2004:00:23:15 +2300
-                sReturn = "["+puakma.util.Util.formatDate(dt, sDateFormat) + "]";
+                synchronized(this)
+                {
+                    sReturn = "["+m_sdf.format(le.getRequestDate()) + "]";
+                }
                 break;                
             case 'X':
                 String sConn = le.getConnectionState();
                 sReturn = "-";//close Use X for aborted                
-                if(sConn.equalsIgnoreCase("keep-alive")) sReturn = "+";
+                if(sConn!=null && sConn.equalsIgnoreCase("keep-alive")) sReturn = "+";
                 break;
             case 'p':
-                int iPort = le.getServerPort();                
-                sReturn = String.valueOf(iPort);
+                sReturn = String.valueOf(le.getServerPort());
                 break;
             default:
-                sReturn = sMiddle;
+                sReturn = m_sMiddle;
         };
         
         if(sReturn==null) sReturn="";
-        return sReturn+sTrailer;
+        return sanitize(sReturn) + m_sTrailer;
     }
     
     /**
-     * returns the {variable} from the format string, eg: "%{dd/MM/yyyy}t" will return "dd/MM/yyyy"
+     * Client supplied values (request line, headers, cookies...) must not be able to add 
+     * lines to the log, so any control characters are replaced with a space
      */
-    private String getVariable(String sDefault)
+    private static String sanitize(String s)
     {
-        int iStart = m_sSpecifier.indexOf('{');
-        int iEnd = m_sSpecifier.indexOf('}');
-        if(iStart<0 || iEnd<0 || iEnd<=iStart) return sDefault;
-        iStart++;
-        return m_sSpecifier.substring(iStart, iEnd);
+        int iLen = s.length();
+        for(int i=0; i<iLen; i++)
+        {
+            char c = s.charAt(i);
+            if(c<32 && c!='\t' || c==127)
+            {
+                char[] ca = s.toCharArray();
+                for(int k=i; k<iLen; k++)
+                {
+                    if(ca[k]<32 && ca[k]!='\t' || ca[k]==127) ca[k] = ' ';
+                }
+                return new String(ca);
+            }
+        }
+        return s;
     }
     
     /**
@@ -208,25 +229,31 @@ public class HTTPLogField
      */
     private String getEnvironmentVar(String sEnvName)
     {
+        if(sEnvName==null || sEnvName.length()==0) return null;
         return System.getProperty(sEnvName);
     }
     
     /**
-     *
+     * The index of the type letter of the specifier, eg "%>s " is 2, "%{Referer}i\" " is 10. 
+     * Skips over any {name}. Returns -1 if there isn't one
      */
     private int getEndOfSpecifier()
     {
-        int iEnd = m_sSpecifier.length()-1;
-        if(iEnd<=0) return -1;
-        boolean bLooking=true;
-        while(bLooking)
+        int iLen = m_sSpecifier.length();
+        int i = 1; //skip the %
+        while(i<iLen)
         {
-            if(iEnd<0) break;
-            char c = m_sSpecifier.charAt(iEnd);            
-            if((c>='a'&&c<='z') || (c>='A'&&c<='Z')) bLooking=false;
-            else iEnd--;
-        }        
-        return iEnd;
+            char c = m_sSpecifier.charAt(i);
+            if(c=='{')
+            {
+                int iClose = m_sSpecifier.indexOf('}', i);
+                if(iClose<0) return -1;
+                i = iClose;
+            }
+            else if((c>='a'&&c<='z') || (c>='A'&&c<='Z')) return i;
+            i++;
+        }
+        return -1;
     }
     
     

@@ -23,12 +23,10 @@ package puakma.addin.http;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.sql.Connection;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Properties;
@@ -38,6 +36,8 @@ import java.util.Vector;
 import puakma.addin.AddInStatistic;
 import puakma.addin.pmaAddIn;
 import puakma.addin.pmaAddInStatusLine;
+import puakma.addin.http.log.AsyncLogWriter;
+import puakma.addin.http.log.DailyLogFile;
 import puakma.addin.http.log.HTTPLogEntry;
 import puakma.addin.http.log.HTTPLogger;
 import puakma.server.AddInMessage;
@@ -71,8 +71,9 @@ public class HTTP extends pmaAddIn
 	private String[] m_sCustomHeaderProcessors=null; 
 	//public final static String PUAKMA_FILE_EXT=".pma";    
 	private String m_sPuakmaFileExt = ".pma";
-	private FileOutputStream m_fout;
-	private Calendar m_calOutFile=Calendar.getInstance();
+	private volatile AsyncLogWriter m_logWriter = null; //logging is done on this thread, not on the request threads
+	private DailyLogFile m_textLog = null; //only touched by the log writer thread
+	private long m_lLastLogErrorTime = 0; //only touched by the log writer thread
 	private SimpleDateFormat m_simpledf = new SimpleDateFormat("yyyyMMdd");
 	private ArrayList<String> m_alMimeExcludes = new ArrayList<String>();
 	private boolean m_bAllowByteServing=false;
@@ -189,6 +190,8 @@ public class HTTP extends pmaAddIn
 		m_pStatus.setStatus("Shutting down");
 		requestQuit();
 		waitForRunners();
+		AsyncLogWriter w = m_logWriter;
+		if(w!=null) w.shutdown(5000); //write out anything still queued now that the requests are done
 		m_pSystem.doInformation("HTTP.Shutdown", this);
 		removeStatusLine(m_pStatus);
 	}
@@ -534,57 +537,98 @@ public class HTTP extends pmaAddIn
 	}
 
 	/**
-	 * Writes lines to log web requests
+	 * The background thread that does all the logging I/O, created on first use
 	 */
-	public synchronized void writeTextStatLog(HTTPLogEntry stat)
+	private AsyncLogWriter getLogWriter()
 	{
-		if(stat==null) return;
-
-		Calendar calNow = Calendar.getInstance();
-
-		try
+		AsyncLogWriter w = m_logWriter;
+		if(w!=null) return w;
+		synchronized(this)
 		{
-			//create a new log each day
-			if(m_fout==null || calNow.get(Calendar.DAY_OF_MONTH)!=m_calOutFile.get(Calendar.DAY_OF_MONTH))
+			if(m_logWriter==null)
 			{
-				String szDate = m_simpledf.format(m_calOutFile.getTime());
-				m_calOutFile = Calendar.getInstance();
-				szDate = m_simpledf.format(m_calOutFile.getTime());
-				String sBareLog = m_pSystem.getSystemProperty("HTTPTextLog");
-				if(sBareLog==null || sBareLog.length()==0) sBareLog = "weblog_*.log";
-				String szLogFile = sBareLog.replaceAll("\\*", szDate);
-
-				m_pSystem.doInformation("HTTP.NewWebLogFile", new String[]{szLogFile}, this);
-				File fLog = new File(szLogFile);
-				boolean bFileExists = fLog.exists();
-				m_fout = new FileOutputStream(szLogFile, true);
-
-				if(!bFileExists)
-				{
-					//Tag this file as an IIS 5.0 log file
-					//this will enable log analysis tools to process it better....
-					SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-					m_fout.write(("#LogGenerator: " + m_pSystem.getVersionString() + "\r\n").getBytes());            
-					m_fout.write(("#Date: "+sdf.format(m_calOutFile.getTime()) + "\r\n").getBytes());
-					m_fout.write(("#Fields: "+ m_httpLog.getLogFormat() + "\r\n").getBytes());
-				}
+				w = new AsyncLogWriter("HTTPLogWriter", AsyncLogWriter.DEFAULT_CAPACITY);
+				w.setIdleHook(() -> { if(m_textLog!=null) m_textLog.flush(); });
+				w.setCloseHook(() -> { if(m_textLog!=null) m_textLog.close(); });
+				w.setReporter(sMsg -> m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{"async log", sMsg}, this));
+				m_logWriter = w;
 			}
-			m_httpLog.logRequest(m_fout, stat);
-		}
-		catch(Exception e)
-		{
-			m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{m_pSystem.getSystemProperty("HTTPTextLog"), e.getMessage()}, this);
+			return m_logWriter;
 		}
 	}
 
 	/**
-	 *
+	 * Run some logging work (eg a database insert) on the log writer thread. Never blocks; 
+	 * the task is dropped if the log queue is full.
+	 */
+	public void submitLogTask(Runnable task)
+	{
+		getLogWriter().submit(task);
+	}
+
+	/**
+	 * Queues a line to log a web request. The work is done on the log writer thread, not the calling thread.
+	 */
+	public void writeTextStatLog(HTTPLogEntry stat)
+	{
+		if(stat==null || !stat.shouldLog()) return;
+		getLogWriter().submit(() -> writeTextStatLogNow(stat));
+	}
+
+	/**
+	 * Only called on the log writer thread
+	 */
+	private void writeTextStatLogNow(HTTPLogEntry stat)
+	{
+		try
+		{
+			if(m_textLog==null)
+			{
+				m_textLog = new DailyLogFile(
+						() -> {
+							String sBareLog = m_pSystem.getSystemProperty("HTTPTextLog");
+							return (sBareLog==null || sBareLog.length()==0) ? "weblog_*.log" : sBareLog;
+						},
+						m_simpledf,
+						() -> {
+							//Tag this file as an IIS 5.0 log file
+							//this will enable log analysis tools to process it better....
+							SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+							return "#LogGenerator: " + m_pSystem.getVersionString() + "\r\n" +
+									"#Date: " + sdf.format(new java.util.Date()) + "\r\n" +
+									"#Fields: " + m_httpLog.getLogFormat() + "\r\n";
+						});
+				m_textLog.setOpenListener(sFile -> m_pSystem.doInformation("HTTP.NewWebLogFile", new String[]{sFile}, this));
+			}
+			String sLine = m_httpLog.formatRequest(stat);
+			if(sLine!=null) m_textLog.write(sLine + "\r\n");
+		}
+		catch(Exception e)
+		{
+			long lNow = System.currentTimeMillis();
+			if(lNow-m_lLastLogErrorTime>30000) //a broken log file fails on every request, only report now and then
+			{
+				m_lLastLogErrorTime = lNow;
+				m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{m_pSystem.getSystemProperty("HTTPTextLog"), e.getMessage()}, this);
+			}
+		}
+	}
+
+	/**
+	 * Queues a stat to be written to the HTTPSTAT table by the log writer thread
 	 */
 	public void writeRDBStatLog(HTTPLogEntry stat)
 	{
+		if(stat==null || !stat.shouldLog()) return;
+		getLogWriter().submit(() -> writeRDBStatLogNow(stat));
+	}
 
+	/**
+	 * Only called on the log writer thread
+	 */
+	private void writeRDBStatLogNow(HTTPLogEntry stat)
+	{
 		Connection cx = null;
-		if(stat==null) return;
 
 		try
 		{

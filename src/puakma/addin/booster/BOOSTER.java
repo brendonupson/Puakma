@@ -18,11 +18,9 @@ package puakma.addin.booster;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Properties;
@@ -32,6 +30,8 @@ import java.util.Vector;
 import puakma.addin.AddInStatistic;
 import puakma.addin.pmaAddIn;
 import puakma.addin.pmaAddInStatusLine;
+import puakma.addin.http.log.AsyncLogWriter;
+import puakma.addin.http.log.DailyLogFile;
 import puakma.addin.http.log.HTTPLogEntry;
 import puakma.addin.http.log.HTTPLogger;
 import puakma.license.LicenseManager;
@@ -104,12 +104,12 @@ public class BOOSTER extends pmaAddIn
 	private ArrayList<String> m_arrAlwaysCacheURIs = new ArrayList<String>();
 	private ArrayList<String> m_arrNoCacheURIs = new ArrayList<String>();
 
-	private FileOutputStream m_fout;
-	private Calendar m_calOutFile=Calendar.getInstance();
+	private volatile AsyncLogWriter m_logWriter = null; //logging is done on this thread, not on the request threads
+	private DailyLogFile m_textLog = null; //only touched by the log writer thread
+	private DailyLogFile m_compressionLog = null; //only touched by the log writer thread
+	private long m_lLastLogErrorTime = 0; //only touched by the log writer thread
 	private SimpleDateFormat m_simpledf = new SimpleDateFormat("yyyyMMdd");
 	private SimpleDateFormat m_logdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-	private FileOutputStream m_fCompressionOut;
-	private Calendar m_calCompressionFile=Calendar.getInstance();
 	private NumberFormat m_nfDecimal = NumberFormat.getInstance();
 	private boolean m_bNoCompressionLog=true;
 	private ArrayList<String> m_alMimeExcludes = new ArrayList<String>();
@@ -330,6 +330,8 @@ public class BOOSTER extends pmaAddIn
 			m_rpAT.interrupt();
 			requestQuit();
 			waitForRunners();      
+			AsyncLogWriter w = m_logWriter;
+			if(w!=null) w.shutdown(5000); //write out anything still queued now that the requests are done
 			m_pSystem.doInformation("BOOSTER.Shutdown", this);
 			removeStatusLine(m_pStatus);
 	}
@@ -1266,108 +1268,135 @@ public class BOOSTER extends pmaAddIn
 
 
 	/**
-	 * Writes lines to log web requests
+	 * The background thread that does all the logging I/O, created on first use
 	 */
-	public synchronized void writeTextStatLog(HTTPLogEntry stat)
+	private AsyncLogWriter getLogWriter()
 	{
-		if(stat==null || !m_bHTTPLog) return;
+		AsyncLogWriter w = m_logWriter;
+		if(w!=null) return w;
+		synchronized(this)
+		{
+			if(m_logWriter==null)
+			{
+				w = new AsyncLogWriter("BOOSTERLogWriter", AsyncLogWriter.DEFAULT_CAPACITY);
+				w.setIdleHook(() -> { 
+					if(m_textLog!=null) m_textLog.flush(); 
+					if(m_compressionLog!=null) m_compressionLog.flush(); 
+				});
+				w.setCloseHook(() -> { 
+					if(m_textLog!=null) m_textLog.close(); 
+					if(m_compressionLog!=null) m_compressionLog.close(); 
+				});
+				w.setReporter(sMsg -> m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{"async log", sMsg}, this));
+				m_logWriter = w;
+			}
+			return m_logWriter;
+		}
+	}
 
-		Calendar calNow = Calendar.getInstance();
+	/**
+	 * Queues a line to log a web request. The work is done on the log writer thread, not the calling thread.
+	 */
+	public void writeTextStatLog(HTTPLogEntry stat)
+	{
+		if(stat==null || !m_bHTTPLog || !stat.shouldLog()) return;
+		getLogWriter().submit(() -> writeTextStatLogNow(stat));
+	}
 
+	/**
+	 * Only called on the log writer thread
+	 */
+	private void writeTextStatLogNow(HTTPLogEntry stat)
+	{
 		try
 		{
-			//create a new log each day
-			if(m_fout==null || calNow.get(Calendar.DAY_OF_MONTH)!=m_calOutFile.get(Calendar.DAY_OF_MONTH))
+			if(m_textLog==null)
 			{
-				String szDate = m_simpledf.format(m_calOutFile.getTime());
-				m_calOutFile = Calendar.getInstance();
-				szDate = m_simpledf.format(m_calOutFile.getTime());
-				String sBareLog = m_pSystem.getSystemProperty("BOOSTERTextLog");
-				if(sBareLog==null || sBareLog.length()==0) sBareLog = "boosterweblog_*.log";
-				String szLogFile = sBareLog.replaceAll("\\*", szDate);
-
-				m_pSystem.doInformation("HTTP.NewWebLogFile", new String[]{szLogFile}, this);
-				File fLog = new File(szLogFile);
-				boolean bFileExists = fLog.exists();
-				m_fout = new FileOutputStream(szLogFile, true);
-
-				if(!bFileExists)
-				{
-					//Tag this file as an IIS 5.0 log file
-					//this will enable log analysis tools to process it better....
-					SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-					m_fout.write(("#LogGenerator: " + m_pSystem.getVersionString() + "\r\n").getBytes());            
-					m_fout.write(("#Date: "+sdf.format(m_calOutFile.getTime()) + "\r\n").getBytes());
-					m_fout.write(("#Fields: "+ m_httpLog.getLogFormat() + "\r\n").getBytes());
-				}
+				m_textLog = new DailyLogFile(
+						() -> {
+							String sBareLog = m_pSystem.getSystemProperty("BOOSTERTextLog");
+							return (sBareLog==null || sBareLog.length()==0) ? "boosterweblog_*.log" : sBareLog;
+						},
+						(SimpleDateFormat)m_simpledf.clone(),
+						() -> {
+							//Tag this file as an IIS 5.0 log file
+							//this will enable log analysis tools to process it better....
+							SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+							return "#LogGenerator: " + m_pSystem.getVersionString() + "\r\n" +
+									"#Date: " + sdf.format(new java.util.Date()) + "\r\n" +
+									"#Fields: " + m_httpLog.getLogFormat() + "\r\n";
+						});
+				m_textLog.setOpenListener(sFile -> m_pSystem.doInformation("HTTP.NewWebLogFile", new String[]{sFile}, this));
 			}
-			m_httpLog.logRequest(m_fout, stat);
+			String sLine = m_httpLog.formatRequest(stat);
+			if(sLine!=null) m_textLog.write(sLine + "\r\n");
 		}
 		catch(Exception e)
 		{
-			m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{m_pSystem.getSystemProperty("BOOSTERTextLog"), e.getMessage()}, this);
+			reportLogError("BOOSTERTextLog", "HTTPServer.WriteStatLogError", e);
 		}
+	}
+
+	/**
+	 * A broken log file fails on every request, so only report now and then. Log writer thread only.
+	 */
+	private void reportLogError(String sProperty, String sErrorKey, Exception e)
+	{
+		long lNow = System.currentTimeMillis();
+		if(lNow-m_lLastLogErrorTime<=30000) return;
+		m_lLastLogErrorTime = lNow;
+		m_pSystem.doError(sErrorKey, new String[]{m_pSystem.getSystemProperty(sProperty), e.getMessage()}, this);
 	}
 
 
 	/**
-	 * Writes lines to log web request comperssion stats
+	 * Queues a line to log web request compression stats. The work is done on the log writer thread.
 	 */
-	public synchronized void writeCompressionStatLog(String sURI, int iOrigSize, int iNewSize, int iWebServerTime, int iTotalTime, String sContentType)
+	public void writeCompressionStatLog(String sURI, int iOrigSize, int iNewSize, int iWebServerTime, int iTotalTime, String sContentType)
 	{
 		if(m_bNoCompressionLog || iOrigSize<=0 || iNewSize<=0) return;
 
-		Calendar calNow = Calendar.getInstance();
+		final java.util.Date dtNow = new java.util.Date();
+		final String sSafeContentType = (sContentType==null) ? "unknown" : sContentType;
+		final String sSafeURI = (sURI==null) ? "???" : sURI;
+		getLogWriter().submit(() -> writeCompressionStatLogNow(dtNow, sSafeURI, iOrigSize, iNewSize, iWebServerTime, iTotalTime, sSafeContentType));
+	}
 
-		if(sContentType==null) sContentType="unknown";
-		if(sURI==null) sURI="???";
-		//String szLogFile = m_pSystem.getSystemProperty("BOOSTERCompressionLog") + szDate + ".log";
-
+	/**
+	 * Only called on the log writer thread
+	 */
+	private void writeCompressionStatLogNow(java.util.Date dtNow, String sURI, int iOrigSize, int iNewSize, int iWebServerTime, int iTotalTime, String sContentType)
+	{
 		try
 		{
-			//create a new log each day
-			if(m_fCompressionOut==null || calNow.get(Calendar.DAY_OF_MONTH)!=m_calCompressionFile.get(Calendar.DAY_OF_MONTH))
-			{          
-				m_calCompressionFile = Calendar.getInstance();
-				String szDate = m_simpledf.format(m_calCompressionFile.getTime());        
-				String sBareLog = m_pSystem.getSystemProperty("BOOSTERCompressionLog");
-				if(sBareLog==null || sBareLog.length()==0) sBareLog = "compression_*.log";
-				String szLogFile = sBareLog.replaceFirst("\\*", szDate);
-
-				m_pSystem.doInformation("BOOSTER.NewCompressionLogFile", new String[]{szLogFile}, this);
-				File fLog = new File(szLogFile);
-				boolean bFileExists = fLog.exists();
-				m_fCompressionOut = new FileOutputStream(szLogFile, true);
-
-				if(!bFileExists)
-				{            
-					m_fCompressionOut.write(("Date Time\tCompress%\tURI\tOrigSize\tNewSize\tWebServerTime (ms)\tTotalTime (ms)\tContentType\r\n").getBytes());
-				}
-			}      
-			m_fCompressionOut.write(m_logdf.format(calNow.getTime()).getBytes());
-			m_fCompressionOut.write('\t');
+			if(m_compressionLog==null)
+			{
+				m_compressionLog = new DailyLogFile(
+						() -> {
+							String sBareLog = m_pSystem.getSystemProperty("BOOSTERCompressionLog");
+							return (sBareLog==null || sBareLog.length()==0) ? "compression_*.log" : sBareLog;
+						},
+						(SimpleDateFormat)m_simpledf.clone(),
+						() -> "Date Time\tCompress%\tURI\tOrigSize\tNewSize\tWebServerTime (ms)\tTotalTime (ms)\tContentType\r\n");
+				m_compressionLog.setOpenListener(sFile -> m_pSystem.doInformation("BOOSTER.NewCompressionLogFile", new String[]{sFile}, this));
+			}
 			double dblCompress = ((double)(iOrigSize-iNewSize)/(double)iOrigSize)*100;
 			if(dblCompress>=100) dblCompress=0;
-			m_fCompressionOut.write((m_nfDecimal.format(dblCompress)+"%").getBytes());
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(sURI.getBytes());
-
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(String.valueOf(iOrigSize).getBytes());
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(String.valueOf(iNewSize).getBytes());
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(String.valueOf(iWebServerTime).getBytes());
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(String.valueOf(iTotalTime).getBytes());
-			m_fCompressionOut.write('\t');
-			m_fCompressionOut.write(sContentType.getBytes());
-			m_fCompressionOut.write('\r');
-			m_fCompressionOut.write('\n');      
+			//the NumberFormat and date format are not thread safe, but only this thread uses them for this log
+			StringBuilder sb = new StringBuilder(160);
+			sb.append(m_logdf.format(dtNow)).append('\t');
+			sb.append(m_nfDecimal.format(dblCompress)).append("%\t");
+			sb.append(sURI).append('\t');
+			sb.append(iOrigSize).append('\t');
+			sb.append(iNewSize).append('\t');
+			sb.append(iWebServerTime).append('\t');
+			sb.append(iTotalTime).append('\t');
+			sb.append(sContentType).append("\r\n");
+			m_compressionLog.write(sb.toString());
 		}
 		catch(Exception e)
 		{
-			m_pSystem.doError("BOOSTER.WriteCompressionLogError", new String[]{m_pSystem.getSystemProperty("BOOSTERCompressionLog"), e.getMessage()}, this);
+			reportLogError("BOOSTERCompressionLog", "BOOSTER.WriteCompressionLogError", e);
 		}
 	}
 
