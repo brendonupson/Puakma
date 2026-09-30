@@ -23,22 +23,28 @@ package puakma.util;
 
 
 import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.nio.charset.Charset;
 
 /**
  * This class is designed to read a stream of bytes. It is a reader because we
  * want to be able to use readLine(). This will read a line up to the CRLF (\r\n)
- * and consume the CRLF
+ * and consume the CRLF. A bare LF is also accepted as a line terminator.
+ * Bytes are mapped 1:1 to chars (ISO-8859-1) by the char read methods. 
  * @author  bupson
  */
 public class ByteStreamReader extends Reader 
 {    
+    /** Longest line readLine() will accept before throwing an IOException */
+    public static final int MAX_LINE_LENGTH = 65536;
+    private static final int MAX_SCRATCH = 8192;
+    
     private BufferedInputStream m_is=null;
-    //private byte[] m_buf = null;
-    private String m_sCharSet = null;
+    private Charset m_charset = null;
+    private byte[] m_lineBuf = new byte[256]; //reused by readLine(), grows up to MAX_LINE_LENGTH
+    private byte[] m_scratch = null; //reused by the char read methods
         
     public ByteStreamReader(InputStream is, int iBufferSize, String sCharSet) 
     {        
@@ -55,16 +61,24 @@ public class ByteStreamReader extends Reader
      */
     private void initialise(InputStream is, int iBufferSize, String sCharSet)
     {        
+        if(is==null) throw new IllegalArgumentException("InputStream cannot be null");
         if(iBufferSize>0) 
             m_is = new BufferedInputStream(is, iBufferSize);        
         else
             m_is = new BufferedInputStream(is);
-        m_sCharSet = sCharSet;
+        
+        Charset cs = Charset.forName("ISO-8859-1");
+        if(sCharSet!=null)
+        {
+            try{ cs = Charset.forName(sCharSet); }
+            catch(Exception e){} //unsupported or illegal name, stay with ISO-8859-1
+        }
+        m_charset = cs;
     }
     
     public void close() throws java.io.IOException 
     {
-        m_is.close();
+        if(m_is!=null) m_is.close();
     }
     
     public void mark(int readlimit)
@@ -72,35 +86,55 @@ public class ByteStreamReader extends Reader
         m_is.mark(readlimit);
     }
     
+    public boolean markSupported()
+    {
+        return true;
+    }
+    
     public void reset() throws IOException
     {
         m_is.reset();
     }
     
-    /**     
-     * This method should not be used and is used only to maintain compatibility with 
-     * the Readers
-     */
-    public int read(char[] values, int param, int param2) throws java.io.IOException 
+    public boolean ready() throws IOException
     {
-        return 0;        
+        return m_is.available()>0;
+    }
+    
+    public long skip(long n) throws IOException
+    {
+        if(n<=0) return 0;
+        return m_is.skip(n); //1 byte == 1 char
+    }
+    
+    /**     
+     * Read up to iLen bytes from the stream into the char array, one char per byte.
+     * @return the number of chars read or -1 at the end of the stream
+     */
+    public int read(char[] cbuf, int iOffset, int iLen) throws java.io.IOException 
+    {
+        if(cbuf==null) throw new NullPointerException();
+        if(iOffset<0 || iLen<0 || iLen>cbuf.length-iOffset) throw new IndexOutOfBoundsException();
+        if(iLen==0) return 0;
+        
+        int iWanted = Math.min(iLen, MAX_SCRATCH);
+        if(m_scratch==null || m_scratch.length<iWanted) m_scratch = new byte[iWanted];
+        int iRead = m_is.read(m_scratch, 0, iWanted);
+        for(int i=0; i<iRead; i++)
+        {
+            cbuf[iOffset+i] = (char)(m_scratch[i] & 0xFF);
+        }
+        return iRead;
     }
     
     /**
-     *Read a block of bytes from the stream into the byte buffer
+     *Read a block of bytes from the stream into the char buffer
      *
      */
     public int read(char[] cbuf) throws java.io.IOException
     {
         if(cbuf==null || cbuf.length==0) return 0;
-                
-        byte buf[] = new byte[cbuf.length];
-        int iRead = m_is.read(buf);
-        for(int i=0; i<iRead; i++)
-        {
-            cbuf[i] = (char)buf[i];
-        }
-        return iRead;
+        return read(cbuf, 0, cbuf.length);
     }
     
     /**
@@ -117,45 +151,39 @@ public class ByteStreamReader extends Reader
     
     
     /**
-     * Read all the way up to a CRLF and consume it. This method looks for \r\n in that
-     * order and is usually used for reading http streams
-     * @return The string up to the CRLF. Returns null if no data was read from the stream
+     * Read all the way up to a LF and consume it, removing a preceding CR if present. 
+     * Usually used for reading http streams
+     * @return The string up to the CRLF. Returns null if no data was read from the stream 
+     * (end of stream). A final unterminated line is returned as is.
+     * @throws IOException if the line is longer than MAX_LINE_LENGTH
      */
     public String readLine() throws java.io.IOException
     {
-        byte CRLF[] = new byte[]{'\r','\n'};
-        byte buf[] = new byte[1];
-        byte bufReturn[] = null;
-        byte bufTestCRLF[] = new byte[2];
-        bufTestCRLF[0] = 0;
-        bufTestCRLF[1] = 0;
-        boolean bReading = true;
-        ByteArrayOutputStream baos = new ByteArrayOutputStream(2048);
-                
-        while(bReading)
+        byte[] buf = m_lineBuf;
+        int iLen = 0;
+        boolean bTerminated = false;
+        int b;
+        while((b=m_is.read()) >= 0)
         {
-            int iRead = m_is.read(buf);
-            if(iRead>0)
+            if(b=='\n')
             {
-                baos.write(buf);
-                //System.out.print(Integer.toHexString(buf[0]) + " ");
-                bufTestCRLF[0] = bufTestCRLF[1];
-                bufTestCRLF[1] = buf[0];
-                if(CRLF[0]==bufTestCRLF[0] && CRLF[1]==bufTestCRLF[1])
-                {
-                    bReading = false;
-                    byte buf2[] = baos.toByteArray();
-                    bufReturn = new byte[buf2.length-2];
-                    System.arraycopy(buf2, 0, bufReturn, 0, buf2.length-2);
-                }
+                bTerminated = true;
+                break;
             }
-            if(iRead<0) bReading = false; //end of stream
+            if(iLen==buf.length)
+            {
+                if(iLen>=MAX_LINE_LENGTH) throw new IOException("Line too long (>"+MAX_LINE_LENGTH+" bytes)");
+                buf = java.util.Arrays.copyOf(buf, Math.min(iLen*2, MAX_LINE_LENGTH));
+                m_lineBuf = buf;
+            }
+            buf[iLen++] = (byte)b;
         }
-        if(bufReturn==null && baos.size()>0) bufReturn = baos.toByteArray();
-        if(bufReturn==null) return null;
         
-        String s = new String(bufReturn, m_sCharSet);
-        //System.out.println("{"+s+"} " + bufReturn.length);
+        if(!bTerminated && iLen==0) return null; //end of stream
+        if(bTerminated && iLen>0 && buf[iLen-1]=='\r') iLen--;
+        
+        String s = new String(buf, 0, iLen, m_charset);
+        if(buf.length>4096) m_lineBuf = new byte[256]; //don't hold a large buffer for the life of the connection
         return s;
     }
     
