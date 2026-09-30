@@ -28,28 +28,62 @@ import java.util.*;
 import java.text.*;
 import java.io.*;
 import java.sql.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Writes an entry to the errorlog. If the database is available, writes a row
- * in the LOG table, else to the system console
+ * in the LOG table, else to the system console.
+ * <p>
+ * Callers only format the message and put it on a bounded queue; a single background thread does the 
+ * console, log file, add-in and database work (the database in batches), so logging never blocks the 
+ * calling (request) thread. If the queue fills up, DEBUG messages are dropped first, then everything, and the 
+ * number dropped is reported. On JVM shutdown the queue is drained; after that messages are written directly.
  */
 public class pmaLog
 {
 	private pmaSystem m_pSystem;
 	private String m_szDateFormat;
-	private PrintWriter m_printLog;
-	private SimpleDateFormat m_simpledf;
-	private DbConnectionPooler m_dbPool;
+	private Writer m_printLog; //only touched by writeBatch(), which is synchronized
+	private SimpleDateFormat m_simpledf; //only used by writeBatch() after construction
+	private volatile DbConnectionPooler m_dbPool;
 	private String m_sLogFileName=null;
-	private long m_ErrCount=0;
-	//private String sLogReceivingAddIns[]=null;
-	private Hashtable<String, String> m_htReceivingAddIns = new Hashtable<String, String>();
-	private boolean m_bLogToDB=true;
-	private Calendar m_calOutFile=Calendar.getInstance();
+	private final AtomicLong m_ErrCount = new AtomicLong(0);
+	private ConcurrentHashMap<String, String> m_htReceivingAddIns = new ConcurrentHashMap<String, String>();
+	private volatile boolean m_bLogToDB=true;
+	private java.time.LocalDate m_dayOutFile = null;
+	private long m_lNextLogFileAttempt = 0;
+	private long m_lNextDBAttempt = 0;
 	private SimpleDateFormat m_simpledfLogfile = new SimpleDateFormat("yyyyMMdd");
 	private long m_lTotalBytesWritten;
 	private long m_lMaxLogSizeBytes;
 	private String m_sCurrentLogFileName;
+
+	private static final int QUEUE_CAPACITY = 20000;
+	private static final int MAX_BATCH = 200;
+	private static final long RETRY_INTERVAL_MS = 10000;
+	private static final String LINE_SEP = System.lineSeparator();
+
+	private static class LogRecord
+	{
+		final long time = System.currentTimeMillis();
+		final String msg, type, user, source;
+		LogRecord(String msg, String type, String user, String source)
+		{
+			this.msg = (msg==null) ? "" : msg;
+			this.type = type;
+			this.user = user;
+			this.source = source;
+		}
+	}
+
+	private final ArrayBlockingQueue<LogRecord> m_queue = new ArrayBlockingQueue<LogRecord>(QUEUE_CAPACITY);
+	private final AtomicLong m_lDropped = new AtomicLong(0);
+	private long m_lReportedDropped = 0; //writeBatch() only
+	private long m_lLastDropReport = 0; //writeBatch() only
+	private volatile boolean m_bAsync = true;
+	private Thread m_writerThread;
 
 	public final static int DEBUGLEVEL_NONE=0;
 	public final static int DEBUGLEVEL_MINIMAL=1;
@@ -104,6 +138,96 @@ public class pmaLog
 		}
 		else
 			m_bLogToDB = false;        
+
+		startWriter();
+	}
+
+	private void startWriter()
+	{
+		m_writerThread = new Thread(new Runnable(){ public void run(){ writerLoop(); } }, "pmaLogWriter");
+		m_writerThread.setDaemon(true);
+		m_writerThread.start();
+		try
+		{
+			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable(){ public void run(){ shutdown(3000); } }, "pmaLogShutdown"));
+		}
+		catch(Exception e){} //JVM is already shutting down
+	}
+
+	/**
+	 * Write out everything that is queued and stop the background thread. Anything logged afterwards 
+	 * is written directly by the calling thread. Waits up to lWaitMS.
+	 */
+	public void shutdown(long lWaitMS)
+	{
+		m_bAsync = false;
+		Thread t = m_writerThread;
+		if(t!=null)
+		{
+			t.interrupt();
+			try{ t.join(lWaitMS); }catch(InterruptedException e){ Thread.currentThread().interrupt(); }
+		}
+		drainQueue(false); //in case the writer thread ran out of time
+	}
+
+	private void writerLoop()
+	{
+		ArrayList<LogRecord> batch = new ArrayList<LogRecord>(MAX_BATCH);
+		while(m_bAsync)
+		{
+			try
+			{
+				LogRecord first = m_queue.take();
+				batch.add(first);
+				m_queue.drainTo(batch, MAX_BATCH-1);
+				writeBatch(batch, true);
+			}
+			catch(InterruptedException e)
+			{
+				break; //shutdown()
+			}
+			catch(Throwable t)
+			{
+				System.err.println("pmaLog writer error: " + t);
+			}
+			finally
+			{
+				batch.clear();
+			}
+		}
+		Thread.interrupted();
+		drainQueue(true);
+	}
+
+	private void drainQueue(boolean bToDB)
+	{
+		ArrayList<LogRecord> batch = new ArrayList<LogRecord>(MAX_BATCH);
+		while(m_queue.drainTo(batch, MAX_BATCH)>0)
+		{
+			try{ writeBatch(batch, bToDB); }catch(Throwable t){}
+			batch.clear();
+		}
+	}
+
+	/**
+	 * Hand the record to the writer thread without ever blocking. 
+	 */
+	private void enqueue(LogRecord rec)
+	{
+		if(!m_bAsync) //shutting down, write it directly
+		{
+			ArrayList<LogRecord> one = new ArrayList<LogRecord>(1);
+			one.add(rec);
+			writeBatch(one, false);
+			return;
+		}
+		//keep the last quarter of the queue for errors and information
+		if(DEBUG_CHAR.equals(rec.type) && m_queue.remainingCapacity()<QUEUE_CAPACITY/4)
+		{
+			m_lDropped.incrementAndGet();
+			return;
+		}
+		if(!m_queue.offer(rec)) m_lDropped.incrementAndGet();
 	}
 
 	/**
@@ -140,7 +264,7 @@ public class pmaLog
 	/**
 	 * Called externally to try to recreate the database pool.
 	 */
-	public void retryCreateDBLoggingPool()
+	public synchronized void retryCreateDBLoggingPool()
 	{
 		if(m_dbPool==null)
 		{
@@ -156,13 +280,14 @@ public class pmaLog
 	/**
 	 * Called externally to try to recreate the database pool.
 	 */
-	public void closeDBLoggingPool()
+	public synchronized void closeDBLoggingPool()
 	{
-		if(m_dbPool!=null) 
+		DbConnectionPooler pool = m_dbPool;
+		if(pool!=null) 
 		{
 			m_bLogToDB = false;
-			m_dbPool.shutdown();
 			m_dbPool = null;          
+			pool.shutdown();
 		}      
 	}
 
@@ -250,7 +375,10 @@ public class pmaLog
 			{
 				System.out.println("Could not amend table to add new settings: " + e.toString());
 			}
-			m_dbPool.releaseConnection(cx);
+			finally
+			{
+				m_dbPool.releaseConnection(cx);
+			}
 		}
 	}
 
@@ -294,11 +422,12 @@ public class pmaLog
 		Connection cx=null;
 		Statement stmt = null;
 
-		if(m_dbPool!=null)
+		DbConnectionPooler pool = m_dbPool;
+		if(pool!=null)
 		{
 			try
 			{
-				cx = m_dbPool.getConnection();				
+				cx = pool.getConnection();				
 				stmt = cx.createStatement();
 				stmt.execute("DELETE FROM PMALOG");				       
 			}
@@ -309,13 +438,8 @@ public class pmaLog
 			finally
 			{
 				Util.closeJDBC(stmt);
-				m_dbPool.releaseConnection(cx);
+				pool.releaseConnection(cx);
 			}
-		}
-		if(m_printLog!=null)
-		{
-			//TODO do we bother with this now that the log can rotate daily?
-			//createLogFile(false);
 		}
 	}
 
@@ -324,154 +448,183 @@ public class pmaLog
 	 */
 	public long getErrorCount()
 	{
-		return m_ErrCount;
+		return m_ErrCount.get();
 	}
 
-	public synchronized void clearErrorCount()
+	public void clearErrorCount()
 	{
-		m_ErrCount=0;
-	}
-
-	/**
-	 *
-	 */
-	private String formatDate(java.util.Date dtIn)
-	{
-		return m_simpledf.format(dtIn);
+		m_ErrCount.set(0);
 	}
 
 	private void writeLog(String szMsg, String szType, String szUser, String szSource)
 	{
-		Connection cx=null;
+		enqueue(new LogRecord(szMsg, szType, szUser, szSource));
+	}
 
-		//the database has been restarted in the background
-		// or started after the db server
-		if(m_dbPool==null && m_bLogToDB) retryCreateDBLoggingPool();
-
-
-		if(m_dbPool==null)
+	/**
+	 * Does the real work on the writer thread (or the calling thread once shut down): console, add-ins and 
+	 * log file for each record, one flush, then one database batch.
+	 */
+	private synchronized void writeBatch(ArrayList<LogRecord> batch, boolean bToDB)
+	{
+		java.util.Date dt = new java.util.Date();
+		long lDropped = m_lDropped.get();
+		if(lDropped!=m_lReportedDropped && (System.currentTimeMillis()-m_lLastDropReport>10000 || !m_bAsync))
 		{
-			try{ writeLog(szMsg, szType, szUser, szSource, null); }catch(Exception w){}
-			return;
+			batch.add(new LogRecord((lDropped-m_lReportedDropped) + " log messages were dropped because the log queue was full", ERROR_CHAR, "", "pmaLog"));
+			m_lReportedDropped = lDropped;
+			m_lLastDropReport = System.currentTimeMillis();
 		}
 
+		StringBuilder sb = new StringBuilder(256);
+		for(int i=0; i<batch.size(); i++)
+		{
+			LogRecord rec = batch.get(i);
+			dt.setTime(rec.time);
+			sb.setLength(0);
+			sb.append(m_simpledf.format(dt));
+			sb.append(": (").append(rec.type).append(") ").append(rec.msg);
+			sb.append("  (").append(rec.user).append(" - ").append(rec.source).append(')');
+			String sLine = sb.toString();
+			System.out.println(sLine);
+			try{ sendMessageToAddIn(new java.util.Date(rec.time), rec.msg, rec.type, rec.user, rec.source); }catch(Throwable t){}
+			writeToTextLog(sLine);
+		}
+		flushTextLog();
+		if(bToDB) writeBatchToDB(batch);
+	}
+
+	private void writeBatchToDB(ArrayList<LogRecord> batch)
+	{
+		if(!m_bLogToDB || batch.size()==0) return;
+		long lNow = System.currentTimeMillis();
+		if(lNow<m_lNextDBAttempt) return; //the DB was failing, the message is already in the console and log file
+
+		DbConnectionPooler pool = m_dbPool;
+		if(pool==null) 
+		{
+			//the database has been restarted in the background or started after the db server
+			m_lNextDBAttempt = lNow + RETRY_INTERVAL_MS;
+			retryCreateDBLoggingPool();
+			pool = m_dbPool;
+			if(pool==null) return;
+			m_lNextDBAttempt = 0;
+		}
+
+		Connection cx = null;
+		PreparedStatement prepStmt = null;
 		try
 		{
-			cx = m_dbPool.getConnection();
-			writeLog(szMsg, szType, szUser, szSource, cx);      
+			cx = pool.getConnection();
+			prepStmt = cx.prepareStatement("INSERT INTO PMALOG(LogString,LogDate,Source,UserName,Type,ServerName) VALUES(?,?,?,?,?,?)");
+			for(int i=0; i<batch.size(); i++)
+			{
+				LogRecord rec = batch.get(i);
+				prepStmt.setString(1, rec.msg);
+				prepStmt.setTimestamp(2, new Timestamp(rec.time));
+				prepStmt.setString(3, rec.source);
+				prepStmt.setString(4, rec.user);
+				prepStmt.setString(5, rec.type);
+				prepStmt.setString(6, m_pSystem.SystemHostName);
+				prepStmt.addBatch();
+			}
+			prepStmt.executeBatch();
 		}
 		catch(Exception e)
 		{
+			m_lNextDBAttempt = System.currentTimeMillis() + RETRY_INTERVAL_MS;
 			try
-			{ 
-				if(cx==null || cx.isClosed() ) 
+			{
+				if(cx==null || cx.isClosed()) 
 				{
-					m_dbPool.releaseConnection(cx);
-					createDBPool(); 
-					return;
+					//connection is dead. Drop the pool, it is recreated on the next attempt. 
+					synchronized(this){ if(m_dbPool==pool) m_dbPool = null; }
+					pool.shutdown();
+					cx = null;
 				}
 			}
 			catch(Exception w){}
 		}
-		finally{
-			m_dbPool.releaseConnection(cx);
+		finally
+		{
+			Util.closeJDBC(prepStmt);
+			if(cx!=null) pool.releaseConnection(cx);
 		}
 	}
 
 	/**
-	 * This version of the function allows us to write critical messages. Otherwise we get into an infinite loop
-	 * if the system connection does not exist or fails
+	 * Writes a line of text to the log file. Rotate the log if required. Not flushed until flushTextLog()
 	 */
-	private void writeLog(String szMsg, String szType, String szUser, String szSource, Connection cx) throws Exception
+	private void writeToTextLog(String sLine)
 	{
-		if(szMsg==null) szMsg="";
-
-		java.util.Date dtNow=new java.util.Date();
-		String szDate;
-		StringBuilder sbLogMsg=new StringBuilder(100);
-
-		szDate = formatDate(dtNow);
-		sbLogMsg.append(szDate);
-		sbLogMsg.append(": (");
-		sbLogMsg.append(szType);
-		sbLogMsg.append(") ");
-		sbLogMsg.append(szMsg);
-		sbLogMsg.append("  (");
-		sbLogMsg.append(szUser);
-		sbLogMsg.append(" - ");
-		sbLogMsg.append(szSource);
-		sbLogMsg.append(')');;
-		System.out.println(sbLogMsg.toString());
-		sendMessageToAddIn(dtNow, szMsg, szType, szUser, szSource);
-		writeToTextLog(sbLogMsg.toString());
-
-		if(cx!=null)
-		{      
-			String szQuery = "INSERT INTO PMALOG(LogString,LogDate,Source,UserName,Type,ServerName) VALUES(?,?,?,?,?,?)";
-			PreparedStatement prepStmt = cx.prepareStatement(szQuery);
-			prepStmt.setString(1, szMsg);
-			prepStmt.setTimestamp(2, new Timestamp(System.currentTimeMillis()));
-			prepStmt.setString(3, szSource);
-			prepStmt.setString(4, szUser);
-			prepStmt.setString(5, szType);
-			prepStmt.setString(6, m_pSystem.SystemHostName);
-			prepStmt.execute();
-			prepStmt.close();      
-		}
-	}
-
-	/**
-	 * Writes a line of text to the log file. Rotate the log if required
-	 * @param sLine
-	 */
-	private synchronized void writeToTextLog(String sLine)
-	{
-
-		Calendar calNow = Calendar.getInstance();
-
 		try
 		{
 			//create a new log each day
-			if(m_printLog==null || calNow.get(Calendar.DAY_OF_MONTH)!=m_calOutFile.get(Calendar.DAY_OF_MONTH))
+			java.time.LocalDate today = java.time.LocalDate.now();
+			if(m_printLog==null || !today.equals(m_dayOutFile))
 			{
-				String szDate = m_simpledf.format(m_calOutFile.getTime());
-				m_calOutFile = Calendar.getInstance();
-				szDate = m_simpledfLogfile.format(m_calOutFile.getTime());
-				String sBareLog = m_sLogFileName; //m_pSystem.getSystemProperty("HTTPTextLog");
-				if(sBareLog==null || sBareLog.length()==0) return;//sBareLog = "puakma.log";
-				m_sCurrentLogFileName = sBareLog.replaceAll("\\*", szDate);
+				long lNow = System.currentTimeMillis();
+				if(lNow<m_lNextLogFileAttempt) return; //couldn't open the file recently
+				String sBareLog = m_sLogFileName;
+				if(sBareLog==null || sBareLog.length()==0) return;
+				closeTextLog();
+				m_lNextLogFileAttempt = lNow + RETRY_INTERVAL_MS; //cleared when the open works
+				String szDate = m_simpledfLogfile.format(new java.util.Date(lNow));
+				m_sCurrentLogFileName = sBareLog.replace("*", szDate);
 
-				//m_pSystem.doInformation("HTTP.NewWebLogFile", new String[]{szLogFile}, this);
 				System.out.println("Using log file: " + m_sCurrentLogFileName);
 				File fLog = new File(m_sCurrentLogFileName);	
 				m_lTotalBytesWritten = fLog.length();
-				boolean bAppendToFile = true;
-				m_printLog = new PrintWriter(new FileWriter(fLog.getAbsolutePath(), bAppendToFile), true);	        
+				m_printLog = new BufferedWriter(new FileWriter(fLog.getAbsolutePath(), true), 16384);
+				m_dayOutFile = today;
+				m_lNextLogFileAttempt = 0;
 			}
-			if(m_printLog!=null) 
+			int iBytesToWrite = sLine.length()+2;
+			m_lTotalBytesWritten += iBytesToWrite;
+			if(m_lMaxLogSizeBytes>iBytesToWrite && m_lTotalBytesWritten>m_lMaxLogSizeBytes) 
 			{
-				int iBytesToWrite = sLine.length()+2;
-				m_lTotalBytesWritten += iBytesToWrite;
-				if(m_lMaxLogSizeBytes>iBytesToWrite && m_lTotalBytesWritten>m_lMaxLogSizeBytes) 
-				{
-					rotateLogs();
-					m_lTotalBytesWritten = iBytesToWrite; //reset
-				}
-				m_printLog.println(sLine);
+				rotateLogs();
+				m_lTotalBytesWritten = iBytesToWrite; //reset
+			}
+			if(m_printLog!=null)
+			{
+				m_printLog.write(sLine);
+				m_printLog.write(LINE_SEP);
 			}
 		}
 		catch(Exception e)
 		{
-			//m_pSystem.doError("HTTPServer.WriteStatLogError", new String[]{m_pSystem.getSystemProperty("HTTPTextLog"), e.getMessage()}, this);
+			//can't log a logging failure. Close so it is reopened (after a pause) rather than failing on every message
+			closeTextLog();
+			m_lNextLogFileAttempt = System.currentTimeMillis() + RETRY_INTERVAL_MS;
 		}
+	}
+
+	private void flushTextLog()
+	{
+		if(m_printLog==null) return;
+		try{ m_printLog.flush(); }
+		catch(Exception e)
+		{ 
+			closeTextLog(); 
+			m_lNextLogFileAttempt = System.currentTimeMillis() + RETRY_INTERVAL_MS;
+		}
+	}
+
+	private void closeTextLog()
+	{
+		Writer w = m_printLog;
+		m_printLog = null;
+		if(w!=null) try{ w.close(); }catch(Exception e){}
 	}
 
 	/**
 	 * Take the current log file and rename it to xxxx.1, then start a new log file
 	 */
-	private void rotateLogs() 
+	private void rotateLogs() throws IOException
 	{
 		System.out.println("\r\n\r\n**** ROTATING LOG [" +m_sCurrentLogFileName +"] ****\r\n\r\n");
+		closeTextLog(); //release the file before renaming (required on Windows)
 		File fActiveLog = new File(m_sCurrentLogFileName);
 		File fArchivedLog = new File(m_sCurrentLogFileName + ".1");
 		if(fActiveLog.exists()) 
@@ -482,22 +635,15 @@ public class pmaLog
 		fActiveLog.renameTo(fArchivedLog);
 
 		fActiveLog = new File(m_sCurrentLogFileName);
-		try 
-		{
-			m_printLog = new PrintWriter(new FileWriter(fActiveLog.getAbsolutePath(), false), true);
-		} 
-		catch (IOException e) 
-		{
-			e.printStackTrace();
-		}
+		m_printLog = new BufferedWriter(new FileWriter(fActiveLog.getAbsolutePath(), false), 16384);
 	}
 
 	/**
 	 *
 	 */
-	private synchronized void incrementErrCount()
+	private void incrementErrCount()
 	{
-		m_ErrCount++;
+		m_ErrCount.incrementAndGet();
 	}
 
 	/**
@@ -510,19 +656,10 @@ public class pmaLog
 	{
 		String sSourceUser[] = new String[2];
 
-
 		if(objSource==null) objSource = m_pSystem;
-		try
-		{
-			ErrorDetect errDetect = (ErrorDetect)objSource; //possible classcastexception
-			sSourceUser[0] = errDetect.getErrorSource();
-			sSourceUser[1] = errDetect.getErrorUser();
-		}
-		catch(Exception e)
-		{ 
-			sSourceUser[0] = m_pSystem.getErrorSource();
-			sSourceUser[1] = m_pSystem.getErrorUser();
-		}
+		ErrorDetect errDetect = (objSource instanceof ErrorDetect) ? (ErrorDetect)objSource : m_pSystem;
+		sSourceUser[0] = errDetect.getErrorSource();
+		sSourceUser[1] = errDetect.getErrorUser();
 
 		return sSourceUser;
 	}
@@ -539,7 +676,7 @@ public class pmaLog
 		ErrorDetect errDetect = (ErrorDetect)objSource;*/
 		String szError = m_pSystem.getSystemMessageString(szErrCode);
 		szError = parseMessage(szError, szParams);
-		try{ writeLog(szError, ERROR_CHAR, sSourceUser[1], sSourceUser[0], null); }catch(Exception w){}
+		writeLog(szError, ERROR_CHAR, sSourceUser[1], sSourceUser[0]);
 	}
 
 
@@ -636,33 +773,28 @@ public class pmaLog
 	 */
 	public static String parseMessage(String sMessage, String sParams[])
 	{     
-		int i, k;
-		StringBuilder sbNew = new StringBuilder(256);
-
 		if(sParams==null) return sMessage;
 		if(sMessage==null) return "";
 
-		i=sMessage.indexOf("%s");
-		if(i >= 0)
-		{      
-			k=0;
-			//szNew="";
-			while(i>=0)
-			{
-				sbNew.append(sMessage.substring(0, i));
-				sMessage = sMessage.substring(i+2);
-				if(sParams.length > k)
-					sbNew.append(sParams[k]);
-				else
-					sbNew.append("#?#");
-				k=k+1;
-				i=sMessage.indexOf("%s");
-			}
-			sbNew.append(sMessage);
-			return sbNew.toString();
-		}
+		int i = sMessage.indexOf("%s");
+		if(i<0) return sMessage;
 
-		return sMessage;
+		StringBuilder sbNew = new StringBuilder(sMessage.length() + 64);
+		int iFrom = 0;
+		int k = 0;
+		while(i>=0)
+		{
+			sbNew.append(sMessage, iFrom, i);
+			if(sParams.length > k)
+				sbNew.append(sParams[k]);
+			else
+				sbNew.append("#?#");
+			k++;
+			iFrom = i+2;
+			i = sMessage.indexOf("%s", iFrom);
+		}
+		sbNew.append(sMessage, iFrom, sMessage.length());
+		return sbNew.toString();
 	}
 
 	/**
@@ -672,10 +804,8 @@ public class pmaLog
 	{
 		if(m_htReceivingAddIns.size()==0) return;
 
-		Enumeration<String> en = m_htReceivingAddIns.keys();
-		while(en.hasMoreElements())
+		for(String sAddInClass : m_htReceivingAddIns.keySet())
 		{
-			String sAddInClass = (String)en.nextElement();
 			if(m_pSystem.isAddInLoaded(sAddInClass))
 			{
 				AddInMessage oMessage = new AddInMessage();
