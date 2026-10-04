@@ -516,6 +516,8 @@ public class Document implements ErrorDetect,Cloneable
 			}
 			String szContentDisposition = Util.getMIMELine(vHeader, "Content-Disposition");
 			String szItemName = Util.getMIMELineValue(szContentDisposition, "name");
+			//some clients send "attachment; filename=x" with no name= parameter, so use the filename
+			if(szItemName==null) szItemName = Util.getMIMELineValue(szContentDisposition, "filename");
 			if(szItemName==null) m_sCreateItemName="";  else m_sCreateItemName=szItemName;
 			if(isMIMEFile(vHeader))
 			{
