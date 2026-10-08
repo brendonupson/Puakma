@@ -112,6 +112,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	private String m_sLDAPSocketFactory = null; //eg "puakma.util.RelaxedSSLSocketFactory"
 	private String m_sFirstNameSurname[] = new String[]{"givenName", "sn"};
 	private long m_lConnectTimeoutMS = 5000;
+	private long m_lReadTimeoutMS = 30000;
 	private boolean m_bDebug = false;
 
 
@@ -162,6 +163,9 @@ public class LDAPAuthenticator extends pmaAuthenticator
 
 		sTemp = SysCtx.getSystemProperty("LDAPConnectTimeoutSeconds");
 		if(sTemp!=null && Util.toInteger(sTemp)>0) m_lConnectTimeoutMS = Util.toInteger(sTemp)*1000;
+
+		sTemp = SysCtx.getSystemProperty("LDAPReadTimeoutSeconds");
+		if(sTemp!=null && Util.toInteger(sTemp)>0) m_lReadTimeoutMS = Util.toInteger(sTemp)*1000;
 
 		m_bDebug = Util.toInteger(SysCtx.getSystemProperty("LDAPDebug"))==1;
 	}
@@ -243,7 +247,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 * Set up the hastable for binding to the ldap dir.
 	 * The username and password params specify the account to use when binding
 	 */
-	private Hashtable setupJNDIEnvironment(String szUserName, String szPassword)
+	private Hashtable setupJNDIEnvironment(String szUserName, String szPassword, boolean bPooled)
 	{
 		Hashtable<String, String> htJNDI = new Hashtable<String, String>();		
 		htJNDI.put(Context.INITIAL_CONTEXT_FACTORY, CONTEXT_FACTORY);
@@ -268,9 +272,12 @@ public class LDAPAuthenticator extends pmaAuthenticator
 
 
 		htJNDI.put("com.sun.jndi.ldap.connect.pool.protocol", "plain ssl"); //BU new
-		htJNDI.put("com.sun.jndi.ldap.connect.pool", "true");//Set connection pooling 
-		//System.out.println(i + ". Trying: " + sLDAPHosts[i]);		
-		if(m_lConnectTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(m_lConnectTimeoutMS));		
+		//pooled connections are kept per bind identity, so only pool the service account binds
+		htJNDI.put("com.sun.jndi.ldap.connect.pool", bPooled ? "true" : "false");//Set connection pooling
+		//System.out.println(i + ". Trying: " + sLDAPHosts[i]);
+		if(m_lConnectTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.connect.timeout", String.valueOf(m_lConnectTimeoutMS));
+		//stop a hung LDAP server from tying up request threads forever (works with ldaps too)
+		if(m_lReadTimeoutMS>0) htJNDI.put("com.sun.jndi.ldap.read.timeout", String.valueOf(m_lReadTimeoutMS));
 		htJNDI.put("com.sun.jndi.ldap.connect.pool.maxsize","30");
 		htJNDI.put("com.sun.jndi.ldap.connect.pool.timeout", "600000");//ms
 
@@ -313,6 +320,15 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private DirContext getInitialDirContext(String sUserName, String sPassword) throws Exception
 	{
+		return getInitialDirContext(sUserName, sPassword, true);
+	}
+
+	/**
+	 *
+	 * @param bPooled false to bypass the JNDI connection pool, eg when binding as an end user
+	 */
+	private DirContext getInitialDirContext(String sUserName, String sPassword, boolean bPooled) throws Exception
+	{
 		String sLDAPHosts[] = getLDAPHosts();
 
 		if(sLDAPHosts!=null)
@@ -320,7 +336,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			String sProviderURLs = Util.implode(sLDAPHosts, " ");
 
 			//System.err.println("Trying LDAP host(s) [" + sProviderURLs +"]");
-			Hashtable htJNDI = setupJNDIEnvironment(sUserName, sPassword);
+			Hashtable htJNDI = setupJNDIEnvironment(sUserName, sPassword, bPooled);
 
 			htJNDI.remove(Context.PROVIDER_URL);
 			htJNDI.remove(Context.SECURITY_PROTOCOL);
@@ -360,7 +376,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			{
 				long lStart = System.currentTimeMillis();
 				InitialDirContext ctx = new InitialDirContext(htJNDI);
-				System.err.println("Using LDAP host: " + ctx.getEnvironment().get(Context.PROVIDER_URL) + "  (" + (System.currentTimeMillis()-lStart) + "ms)");
+				if(m_bDebug) doDebug("Using LDAP host: " + ctx.getEnvironment().get(Context.PROVIDER_URL) + "  (" + (System.currentTimeMillis()-lStart) + "ms)");
 
 				//System.out.println("OK: " + sLDAPHosts[i]);
 				return ctx;
@@ -435,15 +451,17 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	public LoginResult loginUser(String szUserName, String szPassword, String szAddress, String szUserAgent, String sAppURI)
 	{
 		LoginResult loginResult = new LoginResult();
-		boolean bFound = false;
-		DirContext ctx = null;
+		if(szUserName==null || szUserName.length()==0 || szUserName.length()>120) return loginResult;
 
+		DirContext ctx = null;
+		NamingEnumeration results = null;
+		SearchResult sr = null;
 		try
 		{
-			long lStart = System.currentTimeMillis();			 
+			long lStart = System.currentTimeMillis();
 
 			ctx = getInitialDirContext(m_sBindUserName, m_sBindPassword);
-			System.out.println("Bind for [" + m_sBindUserName + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
+			if(m_bDebug) doDebug("Bind for [" + m_sBindUserName + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
 
 			lStart = System.currentTimeMillis();
 			SearchControls constraints = new SearchControls();
@@ -451,43 +469,40 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			if(m_sLDAPDNAttribute!=null && m_sLDAPDNAttribute.length()>0) constraints.setReturningAttributes(new String[]{m_sLDAPDNAttribute});
 
 			String sSearchBase = m_sLDAPSearchBase;
-			String sLDAPSearchString = parseSearchString(m_sUserSearchString, szUserName); //makeSearchString(szUserName);
+			String sLDAPSearchString = parseSearchString(m_sUserSearchString, escapeFilterValue(szUserName));
 			if(m_bDebug) SysCtx.doDebug(0, "UserSearchString=" + m_sUserSearchString, this);
-			NamingEnumeration results = ctx.search(sSearchBase, sLDAPSearchString, constraints);            
+			results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
 			if(results!=null && results.hasMore())
 			{
-				bFound = true;
-				System.out.println("Search for [" + sLDAPSearchString + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
-				SearchResult sr = (SearchResult)results.next();
+				if(m_bDebug) doDebug("Search for [" + sLDAPSearchString + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
+				sr = (SearchResult)results.next();
 				boolean bMoreResults = false;
 				try{ bMoreResults = results.hasMore(); }catch(NamingException ne){}
-				if(bMoreResults)                
-					loginResult.ReturnCode = LoginResult.LOGIN_RESULT_TOO_MANY_MATCHES;                                    
-				else   				
-					return bindUser(sr, szPassword, loginResult);                
+				if(bMoreResults)
+				{
+					loginResult.ReturnCode = LoginResult.LOGIN_RESULT_TOO_MANY_MATCHES;
+					sr = null;
+				}
 			}
-
-			if(!bFound)
-			{
+			else
 				loginResult.ReturnCode = LoginResult.LOGIN_RESULT_INVALID_USER;
-			}
-
 		}
 		catch(Exception e)
 		{
+			sr = null;
 			if(SysCtx!=null)
-				SysCtx.doError("Error logging in LDAP user '%s'", new String[]{e.toString()}, this);            
+				SysCtx.doError("Error logging in LDAP user '%s'", new String[]{e.toString()}, this);
 			else
 				e.printStackTrace();
 		}
 		finally
 		{
-			try {
-				if(ctx!=null)				
-					ctx.close();
-			} catch (Exception e) {}
+			close(results);
+			close(ctx);
 		}
 
+		//bind as the user once the service account connection has gone back to the pool
+		if(sr!=null) return bindUser(sr, szPassword, loginResult);
 		return loginResult;
 	}
 
@@ -512,7 +527,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		{       
 			String sDN = null;
 			Attributes attrs = sr.getAttributes();
-			if(attrs==null) return null;
+			if(attrs==null) return loginResult;
 			// || m_sLDAPDNAttribute.trim().length()==0 || m_sLDAPDNAttribute==null
 			Attribute att = null;
 			if(m_sLDAPDNAttribute!=null && m_sLDAPDNAttribute.trim().length()>0) att = attrs.get(m_sLDAPDNAttribute);
@@ -524,13 +539,14 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			else
 			{
 				if(m_sLDAPDNAttribute!=null && m_sLDAPDNAttribute.length()>0) System.err.println("LDAPDNAttribute=" + m_sLDAPDNAttribute + " does not exist in this schema.");
-				sDN = sr.getName() + "," + m_sLDAPSearchBase;
+				sDN = sr.getNameInNamespace();
 			}
 
 			long lStart = System.currentTimeMillis();			 
-			DirContext ctx = getInitialDirContext(sDN, sPassword);
-			ctx.close();
-			System.out.println("Bind for [" + sDN + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
+			//not pooled: the pool keeps idle connections per bind identity, ie per user
+			DirContext ctx = getInitialDirContext(sDN, sPassword, false);
+			close(ctx);
+			if(m_bDebug) doDebug("Bind for [" + sDN + "]   took: " + (System.currentTimeMillis()-lStart) + "ms");
 
 			//if we get here, then the password etc must be OK
 			loginResult.ReturnCode = LoginResult.LOGIN_RESULT_SUCCESS;
@@ -552,7 +568,6 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		catch(AuthenticationNotSupportedException wp) //wrong password
 		{
 			loginResult.ReturnCode = LoginResult.LOGIN_RESULT_FAIL;
-			wp.printStackTrace();
 		}
 		catch(AuthenticationException ae)
 		{
@@ -598,10 +613,12 @@ public class LDAPAuthenticator extends pmaAuthenticator
 	 */
 	private boolean isUserInGroupPrivate(String sUserName, String sGroup)
 	{               
+		if(sUserName==null || sUserName.length()==0 || sGroup==null || sGroup.length()==0) return false;
 		//don't bother checking anonymous users group memberships in LDAP
 		if(sUserName.equalsIgnoreCase("CN="+pmaSession.ANONYMOUS_USER) || sUserName.equalsIgnoreCase(pmaSession.ANONYMOUS_USER)) return false;
 
 		DirContext ctx = null;
+		NamingEnumeration results = null;
 		if(m_bDebug) SysCtx.doDebug(0, "isUserInGroupPrivate(\""+sUserName + "\",\"" + sGroup + "\") attr:" + m_sLDAPGroupMemberAttribute, this);
 		X500Name nmUser = new X500Name(sUserName);
 		nmUser.setSeperator(",");
@@ -617,14 +634,14 @@ public class LDAPAuthenticator extends pmaAuthenticator
 
 			String sSearchBase = nmUser.getCanonicalName();
 			//String sLDAPSearchString = m_sGroupSearchString;
-			String sLDAPSearchString = parseSearchString(m_sGroupSearchString, sSearchBase);
-			System.out.println(sLDAPSearchString);
-			NamingEnumeration results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
+			String sLDAPSearchString = parseSearchString(m_sGroupSearchString, escapeFilterValue(sSearchBase));
+			if(m_bDebug) doDebug(sLDAPSearchString);
+			results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
 			if(results!=null && results.hasMore())
 			{
 
 				SearchResult sr = (SearchResult)results.next();                
-				System.out.println("Found=["+sr.getName() + "]");
+				if(m_bDebug) doDebug("Found=["+sr.getName() + "]");
 
 				//System.out.println("looking for=["+nmFindGroup.getCanonicalName()+"]["+nmFindGroup.getCommonName()+"]");
 				Attributes attrs = sr.getAttributes();                    
@@ -651,10 +668,8 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		}
 		finally
 		{
-			try {
-				if(ctx!=null)				
-					ctx.close();
-			} catch (Exception e) {}
+			close(results);
+			close(ctx);
 		}
 
 		return false;
@@ -670,6 +685,7 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		if(sCanonicalName==null || sCanonicalName.length()==0) return loginResult;
 
 		DirContext ctx = null;
+		NamingEnumeration results = null;
 		X500Name nmUser = new X500Name(sCanonicalName);
 		nmUser.setSeperator(",");        
 		try
@@ -682,8 +698,8 @@ public class LDAPAuthenticator extends pmaAuthenticator
 			constraints.setReturningAttributes(m_sFirstNameSurname);
 
 			String sSearchBase = nmUser.getCanonicalName();
-			String sLDAPSearchString = m_sGroupSearchString;
-			NamingEnumeration results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
+			String sLDAPSearchString = parseSearchString(m_sGroupSearchString, escapeFilterValue(sSearchBase));
+			results = ctx.search(sSearchBase, sLDAPSearchString, constraints);
 			if(results!=null && results.hasMore())
 			{                
 				SearchResult sr = (SearchResult)results.next();
@@ -716,30 +732,77 @@ public class LDAPAuthenticator extends pmaAuthenticator
 		}
 		finally
 		{
-			try {
-				if(ctx!=null)				
-					ctx.close();
-			} catch (Exception e) {}
+			close(results);
+			close(ctx);
 		}
 		return loginResult;
 	}
 
 
 	/**
-	 *
+	 * Replace every %s in the query with the replacement. Searching continues after the
+	 * inserted text so a replacement containing "%s" cannot loop forever.
 	 */
 	public static String parseSearchString(String sSearchQuery, String sReplacement)
 	{
+		if(sSearchQuery==null) return null;
+		if(sReplacement==null) sReplacement = "";
 		String sParam = "%s";
+		StringBuilder sb = new StringBuilder(sSearchQuery.length() + sReplacement.length());
+		int iStart = 0;
 		int iPos = sSearchQuery.indexOf(sParam);
 		while(iPos>=0)
 		{
-			String sFirstPart = sSearchQuery.substring(0, iPos);
-			String sLastPart = sSearchQuery.substring(iPos+sParam.length(), sSearchQuery.length());
-			sSearchQuery = sFirstPart + sReplacement + sLastPart;
-			iPos = sSearchQuery.indexOf(sParam);
+			sb.append(sSearchQuery, iStart, iPos).append(sReplacement);
+			iStart = iPos + sParam.length();
+			iPos = sSearchQuery.indexOf(sParam, iStart);
 		}
-		return sSearchQuery;
+		sb.append(sSearchQuery, iStart, sSearchQuery.length());
+		return sb.toString();
+	}
+
+	/**
+	 * Escape a value for use inside an LDAP search filter (RFC 4515) so user input
+	 * cannot alter the filter, eg "*" or "x)(cn=*"
+	 */
+	public static String escapeFilterValue(String sValue)
+	{
+		if(sValue==null) return "";
+		StringBuilder sb = new StringBuilder(sValue.length()+8);
+		for(int i=0; i<sValue.length(); i++)
+		{
+			char c = sValue.charAt(i);
+			switch(c)
+			{
+			case '\\': sb.append("\\5c"); break;
+			case '*': sb.append("\\2a"); break;
+			case '(': sb.append("\\28"); break;
+			case ')': sb.append("\\29"); break;
+			case '\0': sb.append("\\00"); break;
+			default: sb.append(c);
+			}
+		}
+		return sb.toString();
+	}
+
+	private void doDebug(String sMessage)
+	{
+		if(SysCtx!=null)
+			SysCtx.doDebug(0, sMessage, this);
+		else
+			System.out.println(sMessage);
+	}
+
+	private static void close(Context ctx)
+	{
+		if(ctx==null) return;
+		try{ ctx.close(); }catch(Exception e){}
+	}
+
+	private static void close(NamingEnumeration ne)
+	{
+		if(ne==null) return;
+		try{ ne.close(); }catch(Exception e){}
 	}
 
 }//end of class
