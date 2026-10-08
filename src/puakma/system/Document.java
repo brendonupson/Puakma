@@ -519,6 +519,8 @@ public class Document implements ErrorDetect,Cloneable
 			//some clients send "attachment; filename=x" with no name= parameter, so use the filename
 			if(szItemName==null) szItemName = Util.getMIMELineValue(szContentDisposition, "filename");
 			if(szItemName==null) m_sCreateItemName="";  else m_sCreateItemName=szItemName;
+			//TODO do we need to handle mime content with no filename or name?
+			//TODO This looks like a simplistic handling of mime content, improve reliability https://datatracker.ietf.org/doc/html/rfc2112
 			if(isMIMEFile(vHeader))
 			{
 				//System.out.println("File: " + Util.getMIMELineValue(szContentDisposition, "filename"));
