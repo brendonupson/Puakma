@@ -12,10 +12,12 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.Vector;
 
 import puakma.addin.http.action.ActionReturn;
@@ -851,6 +853,16 @@ public class TornadoApplication implements ErrorDetect
 	 * @return
 	 */
 	private boolean hasRoleInternal(SessionContext sessCtx, String sRole, UserRoles ur)
+	{
+		return hasRoleInternal(sessCtx, sRole, ur, new HashSet<String>());
+	}
+
+	/**
+	 * visitedRoles holds the (upper case) roles already checked so that roles which
+	 * contain themselves, eg [RoleA] -> [RoleB] -> [RoleA], cannot recurse forever.
+	 * The system connection is released before any nested role or group is checked.
+	 */
+	private boolean hasRoleInternal(SessionContext sessCtx, String sRole, UserRoles ur, Set<String> visitedRoles)
 	{				
 		if(ur!=null && ur.hasRole(sRole)) return true;
 
@@ -861,9 +873,9 @@ public class TornadoApplication implements ErrorDetect
 		Connection cx = null;
 		PreparedStatement stmt = null;
 		ResultSet rs = null;
-		boolean bHasRole=false;
 
 		if(sRole==null || sAppName==null || sAppName.length()==0) return false;
+		if(!visitedRoles.add(sRole.toUpperCase())) return false;
 
 		boolean bHasGroup = true;
 		if(sAppGroup==null || sAppGroup.length()==0) bHasGroup = false;
@@ -875,6 +887,7 @@ public class TornadoApplication implements ErrorDetect
 			sQuery = "SELECT PERMISSION.Name FROM APPLICATION,ROLE,PERMISSION WHERE UPPER(APPLICATION.AppName)=? AND (UPPER(APPLICATION.AppGroup)=? OR APPLICATION.AppGroup='*') AND APPLICATION.AppID=ROLE.AppID AND ROLE.RoleID=PERMISSION.RoleID AND UPPER(ROLE.RoleName)=?";
 		}
 
+		ArrayList<String> permissions = new ArrayList<String>();
 		try
 		{
 			cx = m_pSystem.getSystemConnection();
@@ -891,41 +904,13 @@ public class TornadoApplication implements ErrorDetect
 			while (rs.next())
 			{
 				String sResult = rs.getString(1);
-				if(sResult==null || sResult.length()==0) continue;
-
-				X500Name nmResult = new X500Name(sResult);
-				X500Name nmUser = sessCtx.getX500Name();
-				//check exact match, *=All, partial match (username must be longer than result!)
-				if(nmUser.equals(nmResult)
-						|| sResult.equals("*")
-						|| nmUser.matches(nmResult))
-				{
-					bHasRole=true;
-				}
-				else
-				{
-					//if the user is not anonymous and the role says only logged in users, allow it.
-					if(!nmUser.equals(pmaSession.ANONYMOUS_USER) && sResult.equals("!*")) 
-						bHasRole=true;
-					else //check groups and other roles here recursively
-					{
-						if(sResult.charAt(0)=='[' && sResult.charAt(sResult.length()-1)==']')
-						{                        
-							String sNewRole = sResult.substring(1, sResult.length()-1);
-							//System.out.println("Checking role contains role "+szResult + " newrole="+sNewRole+"=");
-							//call this method again                        
-							bHasRole = hasRoleInternal(sessCtx, sNewRole, ur);
-						}
-						else
-							bHasRole = m_pSystem.isUserInGroup(sessCtx, sResult, rPath.getFullPath());
-					}
-				}
-				if(bHasRole) break;
-			}//while			
+				if(sResult!=null && sResult.length()>0) permissions.add(sResult);
+			}
 		}
 		catch (Exception sqle)
 		{
 			m_pSystem.doError("TornadoApplication.hasRoleError", new String[]{sqle.getMessage()}, sessCtx);
+			return false;
 		}
 		finally
 		{
@@ -933,7 +918,35 @@ public class TornadoApplication implements ErrorDetect
 			Util.closeJDBC(stmt);
 			m_pSystem.releaseSystemConnection(cx);
 		}
-		return bHasRole;
+
+		X500Name nmUser = sessCtx.getX500Name();
+		for(int i=0; i<permissions.size(); i++)
+		{
+			String sResult = permissions.get(i);
+			X500Name nmResult = new X500Name(sResult);
+			//check exact match, *=All, partial match (username must be longer than result!)
+			if(nmUser.equals(nmResult)
+					|| sResult.equals("*")
+					|| nmUser.matches(nmResult))
+			{
+				return true;
+			}
+
+			//if the user is not anonymous and the role says only logged in users, allow it.
+			if(!nmUser.equals(pmaSession.ANONYMOUS_USER) && sResult.equals("!*")) return true;
+
+			//check groups and other roles here recursively
+			boolean bHasRole;
+			if(sResult.charAt(0)=='[' && sResult.charAt(sResult.length()-1)==']')
+			{                        
+				String sNewRole = sResult.substring(1, sResult.length()-1);
+				bHasRole = hasRoleInternal(sessCtx, sNewRole, ur, visitedRoles);
+			}
+			else
+				bHasRole = m_pSystem.isUserInGroup(sessCtx, sResult, rPath.getFullPath());
+			if(bHasRole) return true;
+		}
+		return false;
 	}
 
 
