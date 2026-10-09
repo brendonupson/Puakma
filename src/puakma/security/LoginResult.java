@@ -20,7 +20,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 *************************************************************** */
 package puakma.security;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 /**
 * This object is returned from an Authenticator object when it attempts
@@ -42,10 +44,11 @@ public final class LoginResult
   public String LastName="";
   public String UserName="";
   public String LoginMessage="";
-  public Vector vAliases = new Vector();
+  public List<String> vAliases = new ArrayList<String>();
   public int ReturnCode=LOGIN_RESULT_INVALID_USER;
 
-  private Hashtable m_hData=new Hashtable();
+  //only touched by the authenticator thread that created it, so no synchronization needed
+  private HashMap<String, String> m_hData=new HashMap<String, String>();
 
   //just a dud so we can create a new one
   public LoginResult(){}
@@ -77,7 +80,7 @@ public final class LoginResult
    */
   public String get(String szName)
   {
-    return (String)m_hData.get(szName);
+    return m_hData.get(szName);
   }
   
   public String toString()
