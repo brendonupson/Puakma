@@ -70,6 +70,7 @@ public class Document implements ErrorDetect,Cloneable
 	public static final String APPPARAM_DISABLEAPP="disableapp"; //'1' if the application is disabled
 	public static final String APPPARAM_DISABLESCHEDULEDACTIONS="disablescheduledactions"; //'1' if scheduled actions are disabled
 	public static final String APPPARAM_FORCESECURECONNECTION = "forcesecureconn";
+	public static final String APPPARAM_SKIPSYSTEMAUTHENTICATORS="skipsystemauthenticators"; //'1' if the application handles the Authorization header itself
 
 	public static final String PAGE_LOGIN_ITEM="$LoginPage";
 	public static final String PAGE_LOGIN_BYPASS="$BypassAuthenticators";

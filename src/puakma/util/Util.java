@@ -33,6 +33,10 @@ import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.io.Serializable;
 import java.io.StringWriter;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -336,6 +340,23 @@ public class Util
 	public static String toGMTString(long lMillis)
 	{
 		return HTTP_DATE_FORMAT.format(Instant.ofEpochMilli(lMillis));
+	}
+
+	/**
+	 * Parse an HTTP header date, eg "Mon, 28 Sep 2026 10:15:00 GMT"
+	 * @return null if the date is missing or not in RFC 1123 format
+	 */
+	public static Date parseHTTPDate(String sDate)
+	{
+		if(sDate==null) return null;
+		try
+		{
+			return Date.from(Instant.from(DateTimeFormatter.RFC_1123_DATE_TIME.parse(sDate.trim())));
+		}
+		catch(Exception e)
+		{
+			return null;
+		}
 	}
 
 	/**
@@ -1661,19 +1682,34 @@ public class Util
 	}
 
 	/**
-	 * Converts a block of utf8 bytes to a String
+	 * Converts a block of utf8 bytes to a String. Invalid bytes become U+FFFD
 	 */
 	public static String stringFromUTF8(byte buf[])
 	{
-		//see http://java.sun.com/j2se/1.4.2/docs/guide/intl/encoding.doc.html
-		final String DEFAULT_CHARSET="UTF-8"; 
-		String sReturn = null;      
+		return stringFromUTF8(buf, false);
+	}
+
+	/**
+	 * Converts a block of utf8 bytes to a String
+	 * @param bStrict true to return null if the bytes are not valid UTF-8, false to replace invalid bytes with U+FFFD
+	 * @return null if buf is null
+	 */
+	public static String stringFromUTF8(byte buf[], boolean bStrict)
+	{
+		if(buf==null) return null;
+		if(!bStrict) return new String(buf, StandardCharsets.UTF_8);
 		try
 		{
-			sReturn = new String(buf, DEFAULT_CHARSET);
+			//new decoder each call, CharsetDecoder is not thread safe
+			return StandardCharsets.UTF_8.newDecoder()
+					.onMalformedInput(CodingErrorAction.REPORT)
+					.onUnmappableCharacter(CodingErrorAction.REPORT)
+					.decode(ByteBuffer.wrap(buf)).toString();
 		}
-		catch(Exception e){}
-		return sReturn;
+		catch(CharacterCodingException e)
+		{
+			return null;
+		}
 	}
 
 	/**

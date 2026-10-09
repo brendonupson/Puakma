@@ -72,9 +72,9 @@ import puakma.util.Util;
 public class pmaSystem implements ErrorDetect
 {
 	//	these are the version strings for reporting to the addins etc.
-	private final String PUAKMA_VERSION="6.1.13";
-	private final int PUAKMA_BUILD=1151;
-	private final String PUAKMA_BUILD_DATE="8 Oct 2026";
+	private final String PUAKMA_VERSION="6.1.14";
+	private final int PUAKMA_BUILD=1153;
+	private final String PUAKMA_BUILD_DATE="9 Oct 2026";
 	private final String PUAKMA_VERSION_TYPE = "Enterprise Server Platform";
 	private final String PUAKMA_VERSION_STRING="Puakma " + PUAKMA_VERSION_TYPE + " v" + PUAKMA_VERSION + " Build:" + PUAKMA_BUILD + " - " + PUAKMA_BUILD_DATE;
 
@@ -1009,6 +1009,7 @@ public class pmaSystem implements ErrorDetect
 
 		if(loginResult!=null && loginResult.ReturnCode!=LoginResult.LOGIN_RESULT_SUCCESS)
 		{
+			//pErr.doDebug(0, "loginSession() Could not log in [" + szLoginName + "] via [" + sURI + "] from any authenticator", this);
 			if(loginResult.ReturnCode==LoginResult.LOGIN_RESULT_INVALID_USER) pErr.doError("pmaSystem.AuthNone", new String[]{szLoginName}, this);
 			return false;
 		}

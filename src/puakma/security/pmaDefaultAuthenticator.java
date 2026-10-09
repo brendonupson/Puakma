@@ -154,7 +154,8 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 						&& sEncryptedPW.startsWith(sStoredPassword);
 				if(!bPasswordOK)
 				{
-					sLogKey = "pmaDefaultAuthenticator.loginFailure";
+					//loginResult.ReturnCode=LoginResult.LOGIN_RESULT_FAIL; //Don't do this because another authenticator in the chain may succeed
+					sLogKey = "pmaDefaultAuthenticator.LoginFailure";
 					sLogParams = new String[]{sLoginName, sIPAddress};
 				}
 				else if(sLoginFlag!=null && sLoginFlag.toUpperCase().indexOf('D')>=0)
@@ -170,7 +171,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 					loginResult.LastName = sLastName;
 					loginResult.UserName = sCanonicalName;
 					loginResult.ReturnCode=LoginResult.LOGIN_RESULT_SUCCESS;
-					sLogKey = "pmaDefaultAuthenticator.loginSuccess";
+					sLogKey = "pmaDefaultAuthenticator.LoginSuccess";
 					sLogParams = new String[]{sCanonicalName, sIPAddress};
 					updateLastLogin(cx, iPersonID, sIPAddress, sUserAgent);
 				}
@@ -178,7 +179,7 @@ public class pmaDefaultAuthenticator extends pmaAuthenticator
 		}
 		catch (Exception sqle)
 		{
-			SysCtx.doError("pmaDefaultAuthenticator.loginSQLError", new String[]{sqle.getMessage()}, this);
+			SysCtx.doError("pmaDefaultAuthenticator.LoginSQLError", new String[]{sqle.getMessage()}, this);
 		}
 		finally
 		{

@@ -449,6 +449,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			//for debug!!
 			//dumpHeaders(m_environment_lines);
 			m_sIfNoneMatch = Util.getMIMELine(m_environment_lines, "If-None-Match");
+			if(m_sIfNoneMatch!=null && m_sIfNoneMatch.trim().length()==0) m_sIfNoneMatch = null; //blank is the same as not sent
 
 			//if the client says close the connection, then close it.
 			String sCloseConnection = Util.getMIMELine(m_environment_lines, "Connection");
@@ -689,13 +690,21 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(!m_bShouldDisableBasicAuth)
 		{
 			String sAuth = Util.getMIMELine(m_environment_lines, "Authorization");
-			if(sAuth!=null) //try to log in the session....
+			//sAuth may be "Basic YnVwc31uOnJ1c3NpYQ==" or just "YnVwc31uOnJ1c3NpYQ==".
+			//Any other scheme, eg "Bearer xxx", is left for the application to deal with
+			if(sAuth!=null)
+			{
+				int iSpace = sAuth.indexOf(' ');
+				if(iSpace>=0) sAuth = sAuth.substring(0, iSpace).equalsIgnoreCase("Basic") ? sAuth.substring(iSpace+1).trim() : null;
+			}
+			if(sAuth!=null && !shouldSkipSystemAuthenticators()) //try to log in the session....
 			{
 				//System.out.println(sAuth);
-				//sAuth may be "Basic YnVwc31uOnJ1c3NpYQ==" or just "YnVwc31uOnJ1c3NpYQ=="
-				int iSpace = sAuth.indexOf(' ');
-				if(iSpace>=0) sAuth = sAuth.substring(iSpace+1);        
-				String sUserNamePass = new String(Util.base64Decode(sAuth));
+				byte bufUserPass[] = Util.base64Decode(sAuth);
+				//modern clients send UTF-8 (RFC 7617), older ones ISO-8859-1. ISO-8859-1 text with accents is almost never valid UTF-8
+				String sUserNamePass = Util.stringFromUTF8(bufUserPass, true);
+				if(sUserNamePass==null && bufUserPass!=null) sUserNamePass = new String(bufUserPass, java.nio.charset.StandardCharsets.ISO_8859_1);
+				if(sUserNamePass==null) sUserNamePass = ""; //not valid base64, no ':' so no login
 				int iPos = sUserNamePass.indexOf(':');
 				if(iPos>=0)
 				{
@@ -754,6 +763,20 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				}
 			}
 		}
+	}
+
+	/**
+	 * @return true if the application this request is for has the AppParam SkipSystemAuthenticators=1,
+	 * so it handles the Authorization header itself (eg bearer tokens) rather than the server
+	 * trying it as Basic auth against the system authenticators
+	 */
+	private boolean shouldSkipSystemAuthenticators()
+	{
+		RequestPath rPath = m_pSession.getRequestPath();
+		//no application in the URL, eg a file served off the filesystem. Don't create an app entry just to ask
+		if(rPath==null || rPath.Application==null || rPath.Application.length()==0) return false;
+		String sSkip = getAppParam(m_pSession, Document.APPPARAM_SKIPSYSTEMAUTHENTICATORS, rPath.Group, rPath.Application);
+		return sSkip!=null && sSkip.trim().equals("1");
 	}
 
 	/**
@@ -1302,46 +1325,27 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			extra_headers.add("Set-Cookie: "+sLtpaCookie);
 			//System.out.println(sLtpaCookie);
 		}*/
-		boolean bNotModified = iHTTPReplyCode==HTTPRequestManager.RET_NOT_MODIFIED;
 		docHTML.setCookiesInHTTPHeader(extra_headers); //copy from doc to arraylist
-		if(docHTML.designObject!=null && !bNotModified) 
+		//also done for a 304, which must carry the same caching headers as the 200 would
+		if(docHTML.designObject!=null)
 		{
-			boolean bIsCacheNoStore = false;
-			//don't bother sending a last modified or expires
-			int iDesignType = docHTML.designObject.getDesignType(); 
+			int iDesignType = docHTML.designObject.getDesignType();
 			if(iDesignType == DesignElement.DESIGN_TYPE_RESOURCE)
-			{           
-				if(Util.getMIMELine(extra_headers, "Last-Modified")==null)
-				{
-					String sLastModified = "Last-Modified: " + formatHTTPDate(docHTML.designObject.getLastModified());
-					extra_headers.add(sLastModified);
-				}
-				if(Util.getMIMELine(extra_headers, "Expires")==null)
-				{
-					//set an expiry time one hour from now					
-					String sExpires = "Expires: " + Util.toGMTString(System.currentTimeMillis() + 3600000L);					
-					extra_headers.add(sExpires);
-				}
-
+			{
+				//normally already set by performRequest(), this only fills in what is missing
+				addResourceCacheHeaders(null, extra_headers, docHTML.designObject.getLastModified(), m_pSession.isLoggedIn());
 			}
-			if(iDesignType == DesignElement.DESIGN_TYPE_PAGE || 
+			else if(iDesignType == DesignElement.DESIGN_TYPE_PAGE ||
 					iDesignType == DesignElement.DESIGN_TYPE_ACTION)
-			{   
-				bIsCacheNoStore = true;
+			{
+				//Note: firefox has a crazy back forward cache which aggressively caches pages. no-store added to prevent caching of pages and actions
 				String sDate = Util.getCurrentGMTString();
-
-				if(Util.getMIMELine(extra_headers, "Last-Modified")==null)
-				{
-					String sLastModified = "Last-Modified: " + sDate;
-					extra_headers.add(sLastModified);
-				}
-				if(Util.getMIMELine(extra_headers, "Expires")==null)
-				{
-					String sExpires = "Expires: " + sDate;
-					extra_headers.add(sExpires);
-				}
+				addHeaderIfMissing(extra_headers, "Last-Modified", sDate);
+				addHeaderIfMissing(extra_headers, "Expires", sDate);
+				addHeaderIfMissing(extra_headers, "Cache-Control", "no-store");
 			}
-			addCacheControlHeader(null, extra_headers, bIsCacheNoStore);
+			else
+				addHeaderIfMissing(extra_headers, "Cache-Control", "max-age=" + m_http_server.getMaxExpirySeconds() + ", must-revalidate");
 		}//last modified and expires block
 
 
@@ -1362,8 +1366,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						docHTML.getContentType(), docHTML.getContent());
 			break;
 		case RET_NOT_MODIFIED:
+			//the document was never prepared, so take the type from the resource itself
 			sendHTTPResponse(iHTTPReplyCode, "Not Modified", extra_headers, HTTP_VERSION,
-					docHTML.getContentType(), null);
+					docHTML.designObject!=null ? docHTML.designObject.getContentType() : docHTML.getContentType(), null);
 			break;
 		case RET_SEEOTHER: //allow for relative paths, full incl. http://, and on server /path.pma
 			/*String szLocation = m_NewLocation;
@@ -1863,28 +1868,19 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(extra_headers==null) extra_headers = new ArrayList<String>();
 		String sMimeType = determineMimeType(fToServe.getAbsolutePath());
 		java.util.Date dtLastModified = new java.util.Date( fToServe.lastModified() );
+		//built first so a 304 carries them too
+		addResourceCacheHeaders(null, extra_headers, dtLastModified, false);
 		if(!hasResourceChanged(dtLastModified))
 		{
 			//no change, send a 304
-			sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION,
+			sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", extra_headers, HTTP_VERSION,
 					sMimeType, null);
 			return;
 		}
 
 		FileInputStream fin = null;
 		try
-		{				
-			String sLastModified = "Last-Modified: " + formatHTTPDate(dtLastModified);
-			extra_headers.add(sLastModified);
-			int iSeconds = (int)Math.abs((System.currentTimeMillis() - dtLastModified.getTime())/1000);
-			iSeconds = iSeconds/2; //set expiry to half the time since it was last modified
-			int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
-			if(iMaxEpirySeconds>=0 && iSeconds>iMaxEpirySeconds) iSeconds = iMaxEpirySeconds;
-			Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
-			String sExpires = "Expires: " + formatHTTPDate(dtExpires);
-			extra_headers.add(sExpires);
-			addCacheControlHeader(null, extra_headers, false);
-
+		{
 			String sReply = "";
 			if(iErrCode==RET_OK) sReply="OK";
 			//assume the smaller files may be css/js/jpg etc so can be compressed
@@ -2145,14 +2141,18 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		boolean bGZip = sEncoding==null && http_response_body.length>=MIN_GZIP_SIZE_BYTES && shouldGZipOutput(content_type);
 
 		//generate an ETag header by hashing the page before it is gzipped, so an
-		//If-None-Match hit can send a 304 without paying for the gzip
+		//If-None-Match hit can send a 304 without paying for the gzip.
+		//Not for no-store replies (pages and actions): the client keeps no copy to revalidate
+		String sCacheControl = puakma.util.Util.getMIMELine(extra_headers, "Cache-Control");
+		boolean bNoStore = sCacheControl!=null && sCacheControl.toLowerCase().indexOf("no-store")>=0;
 		String sETag = null;
-		if(http_code>=200 && http_code<300 && m_http_server.shouldGenerateETags())
+		if(http_code>=200 && http_code<300 && !bNoStore && m_http_server.shouldGenerateETags())
 		{
 			sETag = makeETag(http_response_body, bGZip);
-			if(isETagMatch(sETag))
+			if(http_code==RET_OK && isETagMatch(sETag))
 			{
-				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION, content_type, null);
+				extra_headers.add("ETag: \""+sETag+'\"');
+				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", extra_headers, HTTP_VERSION, content_type, null);
 				return;
 			}
 		}
@@ -2214,13 +2214,22 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	}
 
 	/**
-	 * @return true if the client sent an If-None-Match for this ETag
+	 * @return true if this is a GET or HEAD and the client's If-None-Match lists this ETag, or is "*".
+	 * Weak comparison, so W/"x" matches "x": proxies weaken ETags when they re-encode a response.
 	 */
 	private boolean isETagMatch(String sETag)
 	{
 		if(sETag==null || m_sIfNoneMatch==null) return false;
-		m_sIfNoneMatch = puakma.util.Util.trimChar(m_sIfNoneMatch, '\"');
-		return m_sIfNoneMatch.equals(sETag);
+		if(!m_sInboundMethod.equalsIgnoreCase("GET") && !m_sInboundMethod.equalsIgnoreCase("HEAD")) return false;
+		ArrayList<String> arrTags = puakma.util.Util.splitString(m_sIfNoneMatch, ',');
+		for(int i=0; i<arrTags.size(); i++)
+		{
+			String sTag = arrTags.get(i).trim();
+			if(sTag.equals("*")) return true;
+			if(sTag.startsWith("W/")) sTag = sTag.substring(2);
+			if(puakma.util.Util.trimChar(sTag, '\"').equals(sETag)) return true;
+		}
+		return false;
 	}
 
 	/**
@@ -2235,11 +2244,10 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			//System.out.println(sETag.length() + " bytes :"+sETag);
 			extra_headers.add("ETag: \""+sETag+'\"');
-			extra_headers.add("Vary: ETag");
 
-			if(isETagMatch(sETag))
+			if(http_code==RET_OK && isETagMatch(sETag))
 			{
-				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", null, HTTP_VERSION,
+				sendHTTPResponse(RET_NOT_MODIFIED, "Not Modified", extra_headers, HTTP_VERSION,
 						content_type, null);
 				return;
 			}
@@ -2342,6 +2350,14 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
           }*/
 
 
+			//gzip is negotiated on Accept-Encoding, so shared caches must keep a copy per encoding
+			if(((http_code>=200 && http_code<300) || http_code==RET_NOT_MODIFIED) && isGZippableContentType(content_type)
+					&& (extra_headers==null || Util.getMIMELine(extra_headers, "Vary")==null))
+			{
+				sbHead.append("Vary: Accept-Encoding").append(HTTP_NEWLINE);
+				out_lines.add("Vary: Accept-Encoding");
+			}
+
 			// Send out any extra headers, if we were given any
 			if(null != extra_headers)
 			{
@@ -2350,6 +2366,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				{
 					// Send the header line out to the client
 					String header_line = extra_headers.get(i);
+					//a 304 has no body, so drop the headers describing one
+					if(http_code==RET_NOT_MODIFIED && isBodyHeader(header_line)) continue;
 					out_lines.add(header_line);
 					//System.out.println(request_id + " " + header_line);
 					sbHead.append(header_line).append(HTTP_NEWLINE);
@@ -3028,57 +3046,60 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		document.PageName = design.getDesignName();
 		document.designObject = design;
-		boolean bIsResource = design.getDesignType()==DesignElement.DESIGN_TYPE_RESOURCE;
-		if(bIsResource && !hasResourceChanged(design))    
-			RequestReturnCode = RET_NOT_MODIFIED;            
-		else
+		RequestReturnCode = RET_OK;
+		if(design.getDesignType()==DesignElement.DESIGN_TYPE_RESOURCE)
 		{
-			if(bIsResource)
-			{
-				Date dtLastModified = design.getLastModified();
-/*
-				Date dtExpires = new Date();
-				long lDiff = (System.currentTimeMillis() - dtLastModified.getTime()) / 2;
-				if(lDiff<0) lDiff = 0;
-				if(lDiff>0) dtExpires = Util.adjustDate(dtExpires, 0, 0, 0, 0, 0, (int) (lDiff/1000) );
-				*/
-				String sLastGMTMod = formatHTTPDate(dtLastModified);
-				document.setExtraHeaderValue("Last-Modified", sLastGMTMod, true);
-				
-				int iSeconds = (int)Math.abs((System.currentTimeMillis() - dtLastModified.getTime())/1000);
-				iSeconds = iSeconds/2; //set expiry to half the time since it was last modified
-				int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
-				if(iMaxEpirySeconds>=0 && iSeconds>iMaxEpirySeconds) iSeconds = iMaxEpirySeconds;
-				Date dtExpires = Util.adjustDate(new Date(), 0, 0, 0, 0, 0, iSeconds);
-				
-				String sExpiresGMT = formatHTTPDate(dtExpires);
-				document.setExtraHeaderValue("Expires", sExpiresGMT, true);
-				
-				addCacheControlHeader(document, null, false);
-			}
-			RequestReturnCode = RET_OK;
+			//set for a 304 too, it must carry the same caching headers as the 200 would
+			addResourceCacheHeaders(document, null, design.getLastModified(), m_pSession.isLoggedIn());
+			if(!hasResourceChanged(design)) RequestReturnCode = RET_NOT_MODIFIED;
 		}
 		return RequestReturnCode;
 	}
-	
-	private void addCacheControlHeader(HTMLDocument document, ArrayList<String> headers, boolean bIsCacheNoStore)
+
+	/**
+	 * Sets Last-Modified, Expires and Cache-Control for a cacheable resource. Expires and max-age
+	 * come from the same value: half the time since it was last modified, capped at HTTPMaxExpirySeconds.
+	 * @param document if not null, the headers are set on it
+	 * @param headers if not null, the headers are added to it where not already present
+	 * @param bPrivate true to stop shared caches (proxies) storing it, eg it was served to a logged in user
+	 */
+	private void addResourceCacheHeaders(HTMLDocument document, ArrayList<String> headers, Date dtLastModified, boolean bPrivate)
 	{
-		int iMaxEpirySeconds = m_http_server.getMaxExpirySeconds();
-		if(iMaxEpirySeconds<0) iMaxEpirySeconds = 0;
-		//Cache-Control: max-age=533280 must-revalidate
-		//Note: firefox has a crazy back forward cache which aggressively caches pages. no-store added to prevent caching of pages and actions
-		String sCacheValue = bIsCacheNoStore ? "no-store" : "max-age="+iMaxEpirySeconds + ", must-revalidate";
-		
+		long lNow = System.currentTimeMillis();
+		long lAgeSeconds = dtLastModified==null ? 0 : Math.abs(lNow - dtLastModified.getTime())/1000;
+		int iSeconds = (int)Math.min(lAgeSeconds/2, m_http_server.getMaxExpirySeconds());
+
+		String sExpires = Util.toGMTString(lNow + iSeconds*1000L);
+		String sCacheControl = (bPrivate ? "private, " : "") + "max-age=" + iSeconds + ", must-revalidate";
 		if(document!=null)
-		{			
-			document.setExtraHeaderValue("Cache-Control", sCacheValue, true);
-		}
-		
-		if(headers!=null && Util.getMIMELine(headers, "Cache-Control")==null)
 		{
-			headers.add("Cache-Control: " + sCacheValue);
+			if(dtLastModified!=null) document.setExtraHeaderValue("Last-Modified", formatHTTPDate(dtLastModified), true);
+			document.setExtraHeaderValue("Expires", sExpires, true);
+			document.setExtraHeaderValue("Cache-Control", sCacheControl, true);
 		}
-		
+		if(headers!=null)
+		{
+			if(dtLastModified!=null) addHeaderIfMissing(headers, "Last-Modified", formatHTTPDate(dtLastModified));
+			addHeaderIfMissing(headers, "Expires", sExpires);
+			addHeaderIfMissing(headers, "Cache-Control", sCacheControl);
+		}
+	}
+
+	private static void addHeaderIfMissing(ArrayList<String> headers, String sName, String sValue)
+	{
+		if(Util.getMIMELine(headers, sName)==null) headers.add(sName + ": " + sValue);
+	}
+
+	/**
+	 * @return true for a header describing a response body, which a 304 doesn't have
+	 */
+	private static boolean isBodyHeader(String sHeaderLine)
+	{
+		int iPos = sHeaderLine.indexOf(':');
+		if(iPos<0) return false;
+		String sName = sHeaderLine.substring(0, iPos).trim();
+		return sName.equalsIgnoreCase("Content-Type") || sName.equalsIgnoreCase("Content-Length")
+				|| sName.equalsIgnoreCase("Content-Encoding") || sName.equalsIgnoreCase("Content-Range");
 	}
 
 	/**
@@ -3105,10 +3126,6 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	}
 
 	/**
-	 * Determines if the design element has changed since the date If-Modified-Since
-	 * sent by the client
-	 */
-	/**
 	 * Formats a date for an HTTP header, eg "Mon, 28 Sep 2026 10:15:00 GMT"
 	 * @return "" if the date is null
 	 */
@@ -3118,9 +3135,17 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		return Util.toGMTString(dt.getTime());
 	}
 
+	/**
+	 * Determines if the design element has changed since the date If-Modified-Since
+	 * sent by the client
+	 */
 	private boolean hasResourceChanged(Date dtLastModified)
 	{
-		String sIfModSince = Util.getMIMELine(m_environment_lines, "If-Modified-Since");		
+		//If-None-Match takes precedence, If-Modified-Since is ignored when both are sent (RFC 9110 13.1.3).
+		//The ETag check happens later, when the body is sent
+		if(m_sIfNoneMatch!=null || dtLastModified==null) return true;
+		if(!m_sInboundMethod.equalsIgnoreCase("GET") && !m_sInboundMethod.equalsIgnoreCase("HEAD")) return true;
+		String sIfModSince = Util.getMIMELine(m_environment_lines, "If-Modified-Since");
 		if(sIfModSince==null) return true;
 		//resend byteserves
 		String sRange = Util.getMIMELine(m_environment_lines, "Range");
@@ -3128,12 +3153,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		int iPos = sIfModSince.indexOf(';');
 		if(iPos>0) sIfModSince = sIfModSince.substring(0, iPos);
-		String sLastGMTMod = formatHTTPDate(dtLastModified);
-		//System.out.println("If-Modified-Since: "+sIfModSince);
-		//System.out.println("Last Mod:          "+sLastGMTMod);
-		boolean bTheSame = sLastGMTMod.equals(sIfModSince);
-		//System.out.println("hasResourceChanged()="+!bTheSame);
-		return !bTheSame;
+		Date dtIfModSince = Util.parseHTTPDate(sIfModSince);
+		if(dtIfModSince==null) return true;
+		//exact match, not "older than", so a file restored with an older date is still resent.
+		//HTTP dates are whole seconds
+		return dtLastModified.getTime()/1000 != dtIfModSince.getTime()/1000;
 	}
 
 
@@ -3285,7 +3309,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//long lStart = System.currentTimeMillis();
 		//m_pSystem.doDebug(0, "A. doWidgetRequest() " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 		ArrayList<String> extra_headers = new ArrayList<String>();
-		String sAuth="WWW-Authenticate: Basic realm=\"BusinessWidget\"";
+		String sAuth="WWW-Authenticate: Basic realm=\"BusinessWidget\", charset=\"UTF-8\"";
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doWidgetRequest(%s)", new String[]{m_sInboundPath}, this);
 
 		//if you don't have the WebServiceAccess role AND the app has one, then lock them out.
@@ -3395,6 +3419,15 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	public boolean shouldGZipOutput(String sContentType)
 	{
 		//m_pSystem.doDebug(0, "shouldGZipOutput() ["+sContentType + "] " + m_http_request_line, this);
+		String sAcceptEncoding = Util.getMIMELine(m_environment_lines, "Accept-Encoding");
+		return sAcceptEncoding!=null && sAcceptEncoding.indexOf("gzip")>=0 && isGZippableContentType(sContentType);
+	}
+
+	/**
+	 * @return true if the server gzips this content type for clients that accept it
+	 */
+	private boolean isGZippableContentType(String sContentType)
+	{
 		if(sContentType==null || sContentType.length()==0 || !m_http_server.shouldGZipOutput())  return false;
 
 		//if the content-type is split over multiple lines or has crap appended
@@ -3407,24 +3440,15 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		//ignore parameters, eg "application/json; charset=utf-8"
 		iPos = sContentType.indexOf(';');
 		if(iPos>0) sContentType = sContentType.substring(0, iPos).trim();
-		String sAcceptEncoding = Util.getMIMELine(m_environment_lines, "Accept-Encoding");
-		if(sAcceptEncoding!=null && sAcceptEncoding.indexOf("gzip")>=0) 
-		{
-			//only compress text data, eg text/html, text/xml, application/x-javascript etc
-			//don't compress gif, jpeg or zip files, they are already compressed
-			if(sContentType!=null  &&
-					(sContentType.startsWith("text") ||
-							sContentType.equals("application/x-javascript")  ||
-							sContentType.equals("application/javascript")  ||
-							sContentType.equals("application/json") ||
-							sContentType.equals("application/xml") ||
-							sContentType.equals("application/xhtml+xml") ||
-							sContentType.equals("image/svg+xml"))) return true;
-
-			//!sContentType.equals("image/gif") && !sContentType.endsWith("jpg"))  return true;
-		}
-
-		return false;
+		//only compress text data, eg text/html, text/xml, application/x-javascript etc
+		//don't compress gif, jpeg or zip files, they are already compressed
+		return sContentType.startsWith("text") ||
+				sContentType.equals("application/x-javascript")  ||
+				sContentType.equals("application/javascript")  ||
+				sContentType.equals("application/json") ||
+				sContentType.equals("application/xml") ||
+				sContentType.equals("application/xhtml+xml") ||
+				sContentType.equals("image/svg+xml");
 	}
 
 	public String getErrorSource()
