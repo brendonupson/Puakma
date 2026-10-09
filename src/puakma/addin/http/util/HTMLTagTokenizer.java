@@ -37,6 +37,7 @@ public class HTMLTagTokenizer
 	private int m_iPos = 0;
 	private ArrayList<String> m_arrStringTokens = new ArrayList<String>();
 	private ListIterator<String> m_iterTokens;
+	private final StringBuilder m_sbToken = new StringBuilder(64); //reused for every token
 
 	/**
 	 * 
@@ -123,12 +124,22 @@ public class HTMLTagTokenizer
 	}
 
 	/**
+	 * All the tokens at once, rather than iterating with nextElement(). The caller may modify the list
+	 * @return
+	 */
+	public ArrayList<String> getTokens()
+	{
+		return m_arrStringTokens;
+	}
+
+	/**
 	 * 
 	 * @return
 	 */
 	private String getNextElement()
 	{
-		StringBuilder sb = new StringBuilder(m_sRemainder.length());
+		StringBuilder sb = m_sbToken;
+		sb.setLength(0);
 		boolean bHasEquals = false;
 		boolean bEndQuoteRequired = false;
 		char cEndQuote=' ';
@@ -161,31 +172,29 @@ public class HTMLTagTokenizer
 
 				sb.append(cChar);
 			}
-			else 
+			else //whitespace
 			{
-				if(Character.isWhitespace(cChar))
-				{
-					if(bHasEquals)
-					{
-						if(sb.lastIndexOf("=") != sb.length()-1)
-						{
-							break;	
-						}
-					}
-					else //if(!bHasEquals)
-					{
-						if(m_iPos+1<m_sRemainder.length())
-						{
-							char character = m_sRemainder.charAt(m_iPos+1);
+				//skip whitespace before a token, rather than returning an empty token
+				if(sb.length()==0) continue;
 
-							if(!(Character.isWhitespace(character) || character == '='))
-							{
-								m_iPos++;
-								break;
-							}
-						}//bounds check
-					}
-				}//if whitespace
+				if(bHasEquals)
+				{
+					//keep going if the value is still to come, eg "a= b"
+					if(sb.charAt(sb.length()-1) != '=') break;
+				}
+				else //if(!bHasEquals)
+				{
+					if(m_iPos+1<m_sRemainder.length())
+					{
+						char character = m_sRemainder.charAt(m_iPos+1);
+
+						if(!(Character.isWhitespace(character) || character == '='))
+						{
+							m_iPos++;
+							break;
+						}
+					}//bounds check
+				}
 			}//else
 		}
 

@@ -175,13 +175,7 @@ public class HTMLControl
 			sTagHTML = "";
 		}
 
-		HTMLTagTokenizer st = new HTMLTagTokenizer(sTagHTML);
-		ArrayList<String> arr = new ArrayList<String>();
-		while(st.hasMoreTokens())
-		{
-			String szItem = (String)st.nextElement();
-			arr.add(szItem);
-		}
+		ArrayList<String> arr = new HTMLTagTokenizer(sTagHTML).getTokens();
 		processItem(sType.toUpperCase(), arr);
 
 	}
@@ -330,13 +324,10 @@ public class HTMLControl
 	{
 		if(m_parsedOtherOptions==null)
 		{
-			m_parsedOtherOptions = new ArrayList<String>();
 			if(OtherOptions!=null && OtherOptions.length()>0)
-			{
-				HTMLTagTokenizer st = new HTMLTagTokenizer(OtherOptions);
-				while(st.hasMoreTokens())
-					m_parsedOtherOptions.add((String)st.nextElement());
-			}
+				m_parsedOtherOptions = new HTMLTagTokenizer(OtherOptions).getTokens();
+			else
+				m_parsedOtherOptions = new ArrayList<String>();
 		}
 		return m_parsedOtherOptions;
 	}
