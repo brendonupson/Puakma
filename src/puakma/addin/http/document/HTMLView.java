@@ -145,48 +145,30 @@ public class HTMLView
 		if(sValue==null) sValue="";
 		if(sURL.indexOf('?')<0) sURL += '?'; //eg may be "/app.pma/AccountView"
 		int iPos = sURL.toLowerCase().indexOf(sParam.toLowerCase());
-		if(iPos>0)
-		{
-			String sBase = sURL.substring(0, iPos);
-			String sRemain = sURL.substring(iPos+sParam.length()+1);
-			iPos = sRemain.indexOf('&');
-			if(iPos>0)
-			{
-				sRemain = sRemain.substring(iPos);
-			}
-			else
-				sRemain = "";
-			sURL = sBase + sParam + sValue + sRemain;
-		}
-		else
-		{
-			sURL += sParam+sValue;
-		}
-		return sURL;
+		if(iPos<0) return sURL + sParam + sValue;
+		//keep everything after the old value, eg a sort parameter, intact
+		return sURL.substring(0, iPos) + sParam + sValue + sURL.substring(getParamValueEnd(sURL, iPos+sParam.length()));
 	}
 
 	/**
-	 * Replace a URL parameter with the value passed
+	 * Remove a URL parameter and its value
 	 */
 	private String removeParam(String sURL, String sParam)
 	{
-		if(sURL==null || sParam==null) return sURL;        
+		if(sURL==null || sParam==null) return sURL;
 		int iPos = sURL.toLowerCase().indexOf(sParam.toLowerCase());
-		if(iPos>0)
-		{
-			String sBase = sURL.substring(0, iPos);
-			String sRemain = sURL.substring(iPos+sParam.length()+1);
-			iPos = sRemain.indexOf('&');
-			if(iPos>0)
-			{
-				sRemain = sRemain.substring(iPos);
-			}
-			else
-				sRemain = "";
-			sURL = sBase + sRemain;
-		}
+		if(iPos<0) return sURL;
+		return sURL.substring(0, iPos) + sURL.substring(getParamValueEnd(sURL, iPos+sParam.length()));
+	}
 
-		return sURL;
+	/**
+	 * Index of the '&' that ends a parameter value starting at iValueStart, or the URL length
+	 * if it is the last parameter. The value may be empty.
+	 */
+	private static int getParamValueEnd(String sURL, int iValueStart)
+	{
+		int iEnd = sURL.indexOf('&', iValueStart);
+		return iEnd<0 ? sURL.length() : iEnd;
 	}
 
 
