@@ -94,6 +94,30 @@ public class Util
 	}
 
 	/**
+	 * Escapes &amp; &lt; &gt; &quot; and ' so untrusted text can be safely placed in HTML
+	 * content or a quoted attribute. Returns "" for null.
+	 */
+	public static String escapeHTML(String sIn)
+	{
+		if(sIn==null) return "";
+		StringBuilder sb = new StringBuilder(sIn.length()+16);
+		for(int i=0; i<sIn.length(); i++)
+		{
+			char c = sIn.charAt(i);
+			switch(c)
+			{
+			case '&': sb.append("&amp;"); break;
+			case '<': sb.append("&lt;"); break;
+			case '>': sb.append("&gt;"); break;
+			case '\"': sb.append("&quot;"); break;
+			case '\'': sb.append("&#39;"); break;
+			default: sb.append(c);
+			}
+		}
+		return sb.toString();
+	}
+
+	/**
 	 * Strips the leading and trailing spaces from a string
 	 * " xxxx  " will return "xxxx"
 	 */

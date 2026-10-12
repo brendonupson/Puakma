@@ -126,6 +126,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	private String m_http_request_line;  // Stores the GET/POST request line
 	private String m_NewLocation; //used when processing the request
 	private int m_iActionReplyCode = -1; //set by an action via setHttpReplyCode(), only used when >=100
+	private boolean m_bServingLoginPage = false; //login page substituted for a page needing authentication, sent as a 401
 	private String m_sActionReplyText = null;
 	private pmaAddInStatusLine m_pStatus;
 	private String m_sRequestedHost="";
@@ -1176,6 +1177,20 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			return;
 		}
 
+		//no such application, 404 regardless of login state
+		if(!TornadoServer.getInstance().getTornadoApplication(rPath.getPathToApplication()).appExists())
+		{
+			m_pSystem.doDebug(pmaLog.DEBUGLEVEL_STANDARD, "Application not found: '%s'", new String[]{document_path}, m_pSession);
+			HTMLDocument docErr = doc;
+			if(docErr==null)
+			{
+				docErr = new HTMLDocument(m_pSession);
+				docErr.rPath = rPath;
+			}
+			sendPuakmaError(RET_FILENOTFOUND, docErr);
+			return;
+		}
+
 		String sDisabled = getAppParam(m_pSession, "DisableApp", rPath.Group, rPath.Application);
 		if(sDisabled!=null && sDisabled.equals("1"))
 		{        
@@ -1361,6 +1376,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(bActionReply)
 				sendHTTPResponse(m_iActionReplyCode, sActionReplyText, extra_headers, HTTP_VERSION,
 						docHTML.getContentType(), docHTML.getContent());
+			else if(m_bServingLoginPage) //show the login page, but don't tell clients and crawlers the request succeeded
+			{
+				//a 401 must carry WWW-Authenticate. A non-standard scheme stops browsers popping up their Basic login dialog
+				extra_headers.add("WWW-Authenticate: FormBased");
+				sendHTTPResponse(RET_UNAUTHORIZED, "Unauthorized", extra_headers, HTTP_VERSION,
+						docHTML.getContentType(), docHTML.getContent());
+			}
 			else
 				sendHTTPResponse(iHTTPReplyCode, "OK", extra_headers, HTTP_VERSION,
 						docHTML.getContentType(), docHTML.getContent());
@@ -1458,6 +1480,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 		long lStart = System.currentTimeMillis();
 		m_iActionReplyCode = -1;
+		m_bServingLoginPage = false;
 		m_sActionReplyText = null;
 		//guess that means we're after a page, action or something
 		int iRequestReturnCode = processDesignElementRequest(document_path, docHTML, bForceClientPull, bByPassSecurity);
@@ -2971,8 +2994,11 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 						if(szUserAttempt!=null && szUserAttempt.length()!=0 && !document.hasItem(Document.PAGE_LOGIN_BYPASS))
 						{
 							document.replaceItem(Document.PAGE_PASSWORD_ITEM, "");          
-							document.replaceItem(Document.PAGE_MESSAGESTRING_ITEM, pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.BadLoginMessage"), new String[]{szUserAttempt}));
-						}                
+							//$MessageString is rendered unescaped, so escape the user supplied name
+							document.replaceItem(Document.PAGE_MESSAGESTRING_ITEM, pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.BadLoginMessage"), new String[]{Util.escapeHTML(szUserAttempt)}));
+						}
+						else //don't render a $MessageString the client posted
+							document.replaceItem(Document.PAGE_MESSAGESTRING_ITEM, "");
 						document.rPath.Action = DesignElement.PARAMETER_OPENPAGE;
 						document.rPath.DesignType = DesignElement.DESIGN_TYPE_PAGE;
 						document.rPath.DesignElementName = getAppParam(m_pSession, Document.APPPARAM_LOGINPAGE, document.rPath.Group, document.rPath.Application);
@@ -2995,6 +3021,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 							document.PageName = design.getDesignName();
 							document.designObject = design;
 							RequestReturnCode=RET_OK;
+							m_bServingLoginPage = true;
 						}                   
 					}//anonymous access
 					else
