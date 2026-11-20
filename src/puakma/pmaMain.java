@@ -105,6 +105,7 @@ public class pmaMain extends Thread
 				pmaClassLoader loader = new pmaClassLoader(v);
 				Object objServer = (loader.loadClass(szServerClass)).newInstance();
 				((Runnable)objServer).run();
+				loader.close();
 				loader = null;
 				objServer = null;
 				System.runFinalization();

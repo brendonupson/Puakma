@@ -23,6 +23,7 @@ package puakma.addin.http;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -30,7 +31,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URLDecoder;
 import java.security.Principal;
@@ -66,8 +66,8 @@ import puakma.system.pmaSession;
 import puakma.system.pmaSystem;
 import puakma.system.pmaThreadInterface;
 import puakma.util.ByteStreamReader;
+import puakma.util.ChunkedInputStream;
 import puakma.util.HTTPHeaderProcessor;
-import puakma.util.RunProgram;
 import puakma.util.Util;
 
 /**
@@ -551,27 +551,32 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 
 
 			boolean bRequestProcessed=false;
-			if(!bRequestProcessed && (m_sInboundMethod.equalsIgnoreCase("GET") || m_sInboundMethod.equalsIgnoreCase("HEAD")))
+			m_bDataPosted = false;
+			if(m_sInboundMethod.equalsIgnoreCase("CONNECT"))
 			{
-				doGet(null, m_sInboundPath, false, true);
+				//we are not a proxy, and the target is host:port not a path
+				m_bCloseConnection = true;
+				sendHTTPResponse(501, "CONNECT is not supported by this server", null, HTTP_VERSION, "text/plain", null);
 				bRequestProcessed=true;
 			}
 
-			if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("OPTIONS")) 
+			if(!bRequestProcessed && m_sInboundMethod.equalsIgnoreCase("OPTIONS"))
 			{
-				m_bDataPosted = false;
-				doOptions(m_sInboundPath);
+				RequestPlan plan = getRequestPlan(m_sInboundPath);
+				if(plan.CloseConnection) m_bCloseConnection = true;
+				if(plan.ErrorCode!=0)
+					sendHTTPResponse(plan.ErrorCode, "Bad request", null, HTTP_VERSION, "text/plain", plan.ErrorMessage.getBytes());
+				else
+					doOptions(m_sInboundPath);
 				bRequestProcessed=true;
 			}
 
-			
-			//treat as post, CardDav etc extensively use OPTIONS
-			//allow other types eg PROPFIND, SEARCH, PUT
+			//GET and HEAD, plus other allowed types eg POST, PUT, DELETE, PATCH, PROPFIND (CardDav etc)
 			String sAllowMethods[] = m_http_server.getAllowedHTTPMethods();
-			if(!bRequestProcessed && isInList(m_sInboundMethod, sAllowMethods)) 
-			{					
-				m_bDataPosted = true;
-				doPost(m_sInboundPath);
+			if(!bRequestProcessed && (m_sInboundMethod.equalsIgnoreCase("GET") || m_sInboundMethod.equalsIgnoreCase("HEAD")
+					|| isInList(m_sInboundMethod, sAllowMethods)))
+			{
+				doRequest(m_sInboundPath);
 				bRequestProcessed=true;
 			}
 
@@ -974,29 +979,72 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * Called for a POST
 	 *
 	 */
-	private void doPost(String document_path)
+	/**
+	 * Build the plan for the current request from its method, url and framing headers
+	 */
+	private RequestPlan getRequestPlan(String document_path)
+	{
+		String sAction = "";
+		try{ sAction = new RequestPath(document_path).Action; }catch(Exception e){} //eg OPTIONS *
+		return RequestPlan.create(m_sInboundMethod, sAction,
+				Util.getMIMELine(m_environment_lines, "Content-Length"),
+				Util.getMIMELine(m_environment_lines, "Transfer-Encoding"));
+	}
+
+	/**
+	 * Entry point for GET, HEAD, POST, PUT, DELETE, PATCH etc. A body is read for any method that may have one,
+	 * whatever the url's ?Action. GET/HEAD run the page's OpenAction. Other methods run its SaveAction unless the
+	 * url asks to open (?OpenPage, ?ReadPage or ?OpenAction), see RequestPlan.isOpenRequest().
+	 */
+	private void doRequest(String document_path)
+	{
+		RequestPlan plan = getRequestPlan(document_path);
+		if(plan.CloseConnection) m_bCloseConnection = true;
+		if(plan.ErrorCode!=0)
+		{
+			sendHTTPResponse(plan.ErrorCode, plan.ErrorCode==RET_BADREQUEST ? "Bad request" : "Not Implemented", null, HTTP_VERSION, "text/plain", plan.ErrorMessage.getBytes());
+			return;
+		}
+
+		boolean bGet = m_sInboundMethod.equalsIgnoreCase("GET") || m_sInboundMethod.equalsIgnoreCase("HEAD");
+		if(!plan.ReadBody)
+		{
+			doGet(null, document_path, false, bGet, plan.OpenPage);
+			return;
+		}
+		m_bDataPosted = true;
+		doPost(document_path, plan);
+	}
+
+	/**
+	 * Status for a redirect the server itself makes (eg to https, or the app's default page). 302 makes clients
+	 * replay a POST/PUT/DELETE as a GET without its body, 307 keeps the method and body.
+	 * Not used for an action's own redirect, which relies on 302 turning a POST into a GET.
+	 */
+	private int getServerRedirectCode()
+	{
+		boolean bGet = m_sInboundMethod.equalsIgnoreCase("GET") || m_sInboundMethod.equalsIgnoreCase("HEAD");
+		return bGet ? RET_SEEOTHER : 307;
+	}
+
+	/**
+	 * Read the request body into a document, then process the request
+	 */
+	private void doPost(String document_path, RequestPlan plan)
 	{
 		//m_pSystem.doDebug(0, "doPost() " + document_path +" " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 
 		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_FULL, "doPost()", this);
 		boolean bForceClientPull=false;
 		HTMLDocument docIn=null;
-		String sContentType =  Util.getMIMELine(m_environment_lines, "Content-Type");
-		if(sContentType==null) sContentType = "multipart/form-data"; //field1=5&field2=7 etc
-		String sBoundary = Util.getMessageBoundary(sContentType);
-		sContentType = getContentType(sContentType);
-		String sContentLength = Util.getMIMELine(m_environment_lines, "Content-Length");
-		long lLength = 0;
-
-		try{
-			lLength = Integer.parseInt(puakma.util.Util.trimSpaces(sContentLength));
-		}catch(Exception nfe){lLength=-1;}
-		//DELETE etc may not have a length
-		/*if(lLength<0) 
-		{
-			sendHTTPResponse(RET_LENGTHREQUIRED, "Content length required", null, HTTP_VERSION, null, null);
-			return;
-		}*/
+		String sRawContentType =  Util.getMIMELine(m_environment_lines, "Content-Type");
+		//RFC 9110 8.3: with no type the recipient may treat it as application/octet-stream. It becomes the "Data" item
+		if(sRawContentType==null || sRawContentType.trim().length()==0) sRawContentType = "application/octet-stream";
+		String sBoundary = Util.getMessageBoundary(sRawContentType);
+		String sContentType = getContentType(sRawContentType).trim().toLowerCase(); //media types are case-insensitive
+		long lLength = plan.ContentLength;
+		boolean bChunked = plan.Chunked;
+		boolean bHasBody = plan.HasBody;
 
 		//check if there is an max POST size and if so enforce it
 		long lMaxUpload = m_http_server.getMaxUploadBytes();
@@ -1004,16 +1052,18 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			String sMessage = pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.ContentLengthLimit"), new String[]{String.valueOf(lLength), String.valueOf(lMaxUpload), m_sInboundPath });
 			m_pSystem.doError(sMessage, this);
+			m_bCloseConnection = true; //the unread body is still on the connection
 			sendHTTPResponse(RET_BADREQUEST, "Bad request", null, HTTP_VERSION, null, sMessage.getBytes());
 			return;
 		}
 
 		RequestPath rPath = new RequestPath(document_path);
 
-		//check we might be posting to a cgi program
-		if(!rPath.isPuakmaApplication() && document_path.toLowerCase().startsWith("/cgi-bin/"))
+		//cgi is not supported. Refuse it before reading the body (serveLocalFile() is the real check)
+		if(!rPath.isPuakmaApplication() && isCGIPath(document_path))
 		{
-			serveLocalFile(document_path);
+			m_bCloseConnection = true; //the body is still on the connection
+			sendCGINotSupported();
 			return;
 		}
 
@@ -1025,21 +1075,56 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			{
 				docErr = new HTMLDocument(m_pSession);
 				docErr.rPath = rPath;
-			}          
+			}
+			if(bHasBody) m_bCloseConnection = true; //the unread body is still on the connection
 			sendPuakmaError(RET_FORBIDDEN, docErr);
 			return;
 		}
 		//m_pSystem.doDebug(0, "doPost() B " + document_path +" " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 
-		String sLowAction = rPath.Action.toLowerCase();
-		if(sLowAction.equals(DesignElement.PARAMETER_SAVEPAGE) || sLowAction.equals(DesignElement.PARAMETER_OPENACTION)
-				|| m_bIsWidgetRequest || sLowAction.length()==0)
+		//the body is read whatever the ?Action, so eg a POST to ?OpenPage or a DELETE to ?OpenAction gets its data
 		{
 			String sCharSet = getInboundCharset(rPath);
-			if(sContentType.equals(Document.CONTENT_MULTI))
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, sContentType, sBoundary, lLength, sCharSet);
-			else
-				docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, m_is, sContentType, lLength, sCharSet);
+			if(bHasBody) sendContinueIfExpected();
+
+			ByteStreamReader bodyReader = m_is;
+			DecodedBody decoded = null;
+			if(bChunked)
+			{
+				try
+				{
+					decoded = readChunkedBody(lMaxUpload);
+				}
+				catch(BodyTooLargeException tle)
+				{
+					String sMessage = pmaLog.parseMessage(m_pSystem.getSystemMessageString("HTTPRequest.ContentLengthLimit"), new String[]{String.valueOf(tle.BytesRead), String.valueOf(lMaxUpload), m_sInboundPath });
+					m_pSystem.doError(sMessage, this);
+					m_bCloseConnection = true;
+					sendHTTPResponse(RET_BADREQUEST, "Bad request", null, HTTP_VERSION, null, sMessage.getBytes());
+					return;
+				}
+				catch(IOException ioe)
+				{
+					m_pSystem.doError("HTTPRequest.BasicError", new String[]{"Invalid chunked request body: " + ioe.getMessage(), m_http_request_line}, this);
+					m_bCloseConnection = true;
+					sendHTTPResponse(RET_BADREQUEST, "Bad request", null, HTTP_VERSION, "text/plain", ("Invalid chunked request body: " + ioe.getMessage()).getBytes());
+					return;
+				}
+				bodyReader = decoded.Reader;
+				lLength = decoded.Length;
+			}
+
+			try
+			{
+				if(sContentType.equals(Document.CONTENT_MULTI))
+					docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, bodyReader, sContentType, sBoundary, lLength, sCharSet);
+				else
+					docIn = new HTMLDocument(m_pSystem, m_pSession, rPath.DesignElementName, bodyReader, sContentType, lLength, sCharSet);
+			}
+			finally
+			{
+				if(decoded!=null) decoded.dispose();
+			}
 
 			//m_pSystem.doDebug(0, "doPost() C " + document_path +" " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 			if(!docIn.isDocumentCreatedOK())
@@ -1065,8 +1150,203 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				}
 				m_bSendSessionCookie=true;
 			}
-		}//! starts with 'open'
-		doGet(docIn, document_path, bForceClientPull, false);
+		}
+
+		doGet(docIn, document_path, bForceClientPull, false, plan.OpenPage);
+	}
+
+	/**
+	 * How to handle one request: whether it may and does carry a body, how that body is framed, whether the
+	 * connection must be closed afterwards, and whether the page's OpenAction or SaveAction applies.
+	 * Kept free of any server state so the rules can be tested on their own.
+	 */
+	static final class RequestPlan
+	{
+		/** methods whose request body has no meaning (RFC 9110 9.3). A body sent with one is never read */
+		static final String[] BODYLESS_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE", "CONNECT"};
+
+		boolean MethodAllowsBody;
+		boolean HasBody;        //the client declared a body (Content-Length>0 or chunked)
+		boolean ReadBody;       //HasBody and the method allows one
+		boolean Chunked;
+		long ContentLength = -1;//-1 if not sent
+		boolean CloseConnection;//the connection can't safely be reused afterwards
+		boolean OpenPage = true;//see isOpenRequest()
+		int ErrorCode = 0;      //non zero: reply with this and close
+		String ErrorMessage;
+
+		/**
+		 * @param sMethod eg "POST"
+		 * @param sAction the first ?xxx of the url, eg "SavePage", "OpenAction" or ""
+		 * @param sContentLength the Content-Length header, or null
+		 * @param sTransferEncoding the Transfer-Encoding header, or null
+		 */
+		static RequestPlan create(String sMethod, String sAction, String sContentLength, String sTransferEncoding)
+		{
+			RequestPlan plan = new RequestPlan();
+			plan.MethodAllowsBody = methodAllowsBody(sMethod);
+			plan.OpenPage = isOpenRequest(plan.MethodAllowsBody, sAction);
+
+			if(sContentLength!=null)
+			{
+				try
+				{
+					plan.ContentLength = Long.parseLong(sContentLength.trim());
+					if(plan.ContentLength<0) throw new NumberFormatException();
+				}
+				catch(NumberFormatException nfe)
+				{
+					return plan.fail(RET_BADREQUEST, "Invalid Content-Length '" + sContentLength + "'");
+				}
+			}
+
+			if(sTransferEncoding!=null && sTransferEncoding.trim().length()>0)
+			{
+				//chunked overrides any Content-Length. Sending both is a request smuggling sign, so don't reuse the connection
+				if(sContentLength!=null) plan.CloseConnection = true;
+				plan.ContentLength = -1;
+				if(sTransferEncoding.trim().equalsIgnoreCase("chunked"))
+					plan.Chunked = true;
+				else if(plan.MethodAllowsBody)
+					return plan.fail(501, "Transfer-Encoding '" + sTransferEncoding + "' is not supported");
+				else
+				{
+					plan.HasBody = true; //can't tell where it ends, so close
+					plan.CloseConnection = true;
+					return plan;
+				}
+			}
+
+			plan.HasBody = plan.Chunked || plan.ContentLength>0;
+			plan.ReadBody = plan.HasBody && plan.MethodAllowsBody;
+			//a body on eg a GET is not read, so it would be taken as the start of the next request
+			if(plan.HasBody && !plan.MethodAllowsBody) plan.CloseConnection = true;
+			return plan;
+		}
+
+		/**
+		 * Decide between the page's OpenAction and SaveAction (and the app's openaction/saveaction pre-actions):
+		 * GET/HEAD always open, so a link, crawler or img src to ?SavePage can't trigger save logic.
+		 * Otherwise (POST, PUT etc) ?OpenPage, ?ReadPage and ?OpenAction open, and ?SavePage, a bare url or any
+		 * other ?xxx saves.
+		 */
+		static boolean isOpenRequest(boolean bMethodAllowsBody, String sAction)
+		{
+			if(!bMethodAllowsBody) return true;
+			String sLowAction = sAction==null ? "" : sAction.trim().toLowerCase();
+			return sLowAction.equals(DesignElement.PARAMETER_OPENPAGE)
+					|| sLowAction.equals(DesignElement.PARAMETER_READPAGE)
+					|| sLowAction.equals(DesignElement.PARAMETER_OPENACTION);
+		}
+
+		static boolean methodAllowsBody(String sMethod)
+		{
+			if(sMethod==null) return false;
+			for(String s : BODYLESS_METHODS) if(s.equalsIgnoreCase(sMethod.trim())) return false;
+			return true;
+		}
+
+		private RequestPlan fail(int iCode, String sMessage)
+		{
+			ErrorCode = iCode;
+			ErrorMessage = sMessage;
+			CloseConnection = true;
+			return this;
+		}
+
+		public String toString()
+		{
+			if(ErrorCode!=0) return "error " + ErrorCode + " close";
+			return (ReadBody ? "read" : (HasBody ? "ignore" : "nobody")) + (Chunked ? " chunked" : "")
+					+ (CloseConnection ? " close" : "") + (OpenPage ? " open" : " save");
+		}
+	}
+
+	/**
+	 * Tell a client that sent "Expect: 100-continue" to go ahead and send the body. Without this curl and
+	 * others wait (typically 1 second) before sending it anyway.
+	 */
+	private void sendContinueIfExpected()
+	{
+		String sExpect = Util.getMIMELine(m_environment_lines, "Expect");
+		if(sExpect==null || !sExpect.trim().equalsIgnoreCase("100-continue") || !"HTTP/1.1".equals(m_sHTTPVersion)) return;
+		try
+		{
+			m_os.write("HTTP/1.1 100 Continue\r\n\r\n".getBytes("ISO-8859-1"));
+			m_os.flush();
+		}
+		catch(IOException ioe) {} //the body read will fail and report it
+	}
+
+	/**
+	 * A decoded chunked request body, in memory or (if large) a temp file
+	 */
+	private static final class DecodedBody
+	{
+		ByteStreamReader Reader;
+		long Length;
+		private InputStream m_is;
+		private File m_file;
+
+		void dispose()
+		{
+			try{ if(m_is!=null) m_is.close(); }catch(IOException e){}
+			if(m_file!=null) m_file.delete();
+		}
+	}
+
+	private static final class BodyTooLargeException extends IOException
+	{
+		private static final long serialVersionUID = 1L;
+		final long BytesRead;
+		BodyTooLargeException(long lBytesRead) { super("Request body too large"); BytesRead = lBytesRead; }
+	}
+
+	/**
+	 * Read and decode a "Transfer-Encoding: chunked" request body from the connection, so it can be handed
+	 * to the Document parsers like any body with a known length. Bodies over 0.5MB are spooled to a temp file.
+	 * @param lMaxUpload stop with BodyTooLargeException once the body exceeds this many bytes. -1 for no limit
+	 */
+	private DecodedBody readChunkedBody(long lMaxUpload) throws IOException
+	{
+		final long MEMORY_LIMIT = 524288;
+		ChunkedInputStream cis = new ChunkedInputStream(m_is);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+		OutputStream out = baos;
+		File fTemp = null;
+		long lTotal = 0;
+		byte buf[] = new byte[Document.UPLOAD_CHUNK_SIZE];
+		try
+		{
+			int iRead;
+			while((iRead = cis.read(buf, 0, buf.length))>=0)
+			{
+				lTotal += iRead;
+				if(lMaxUpload>=0 && lTotal>lMaxUpload) throw new BodyTooLargeException(lTotal);
+				if(fTemp==null && lTotal>MEMORY_LIMIT)
+				{
+					fTemp = File.createTempFile(String.valueOf(m_pSystem.getSystemUniqueNumber())+"_chunked_", null, m_pSystem.getTempDir());
+					out = new BufferedOutputStream(new FileOutputStream(fTemp));
+					baos.writeTo(out);
+					baos = null;
+				}
+				out.write(buf, 0, iRead);
+			}
+			out.close();
+		}
+		catch(IOException ioe)
+		{
+			try{ out.close(); }catch(IOException e){}
+			if(fTemp!=null) fTemp.delete();
+			throw ioe;
+		}
+
+		DecodedBody body = new DecodedBody();
+		body.Length = lTotal;
+		body.m_file = fTemp;
+		body.m_is = fTemp!=null ? new FileInputStream(fTemp) : new ByteArrayInputStream(baos.toByteArray());
+		body.Reader = new ByteStreamReader(body.m_is);
+		return body;
 	}
 
 	/**
@@ -1099,7 +1379,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 *                          HTTP request header line received from the
 	 *                          client.
 	 */
-	private void doGet(HTMLDocument doc, String document_path, boolean bForceClientPull, boolean bGet)
+	private void doGet(HTMLDocument doc, String document_path, boolean bForceClientPull, boolean bGet, boolean bOpenPage)
 	{
 
 		if(document_path==null) document_path="/";
@@ -1122,7 +1402,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					{
 						ArrayList<String> extra_headers = new ArrayList<String>();
 						extra_headers.add("Location: " + szDefaultURL);
-						sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, null, null);
+						sendHTTPResponse(getServerRedirectCode(), "Moved", extra_headers, HTTP_VERSION, null, null);
 						return;
 					}
 					else
@@ -1153,7 +1433,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + szRedirectURL);
 			} */
 			extra_headers.add("Location: " + szRedirectURL);
-			sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, null, null);
+			sendHTTPResponse(getServerRedirectCode(), "Moved", extra_headers, HTTP_VERSION, null, null);
 			return;        
 		}
 
@@ -1226,7 +1506,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);	
 				*/
 				extra_headers.add("Location: " + document_path);
-				sendHTTPResponse(RET_SEEOTHER, "Moved", extra_headers, HTTP_VERSION, "text/html", null);
+				sendHTTPResponse(getServerRedirectCode(), "Moved", extra_headers, HTTP_VERSION, "text/html", null);
 				return;
 			}
 		}
@@ -1240,7 +1520,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 				ArrayList<String> extra_headers = new ArrayList<String>();				
 				String sProto = "https://";
 				extra_headers.add("Location: " + sProto + m_sRequestedHost + document_path);					
-				sendHTTPResponse(RET_SEEOTHER, "SSL Required", extra_headers, HTTP_VERSION, "text/html", null);
+				sendHTTPResponse(getServerRedirectCode(), "SSL Required", extra_headers, HTTP_VERSION, "text/html", null);
 				return;
 			}
 		}//!secure
@@ -1286,7 +1566,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			return;
 		}
 
-		int iHTTPReplyCode = performRequest(document_path, docHTML, bGet, bForceClientPull, false);
+		int iHTTPReplyCode = performRequest(document_path, docHTML, bGet, bOpenPage, bForceClientPull, false);
 		if(iHTTPReplyCode==HTTPRequestManager.RET_DO_NOTHING)
 		{
 			try{ m_os.flush(); } catch(Exception ioe){}
@@ -1476,6 +1756,16 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 */
 	public int performRequest(String document_path, HTMLDocument docHTML, boolean bGet, boolean bForceClientPull, boolean bByPassSecurity)
 	{
+		return performRequest(document_path, docHTML, bGet, bGet, bForceClientPull, bByPassSecurity);
+	}
+
+	/**
+	 * @param bGet true for a GET or HEAD request
+	 * @param bOpenPage true to run the page's OpenAction (and the app's OpenAction pre-actions), false for SaveAction.
+	 * Comes from the url (?SavePage), not the http method
+	 */
+	public int performRequest(String document_path, HTMLDocument docHTML, boolean bGet, boolean bOpenPage, boolean bForceClientPull, boolean bByPassSecurity)
+	{
 		//m_pSystem.doDebug(0, "performRequest() " + (System.currentTimeMillis()-m_lStart) + "ms", this);
 
 		long lStart = System.currentTimeMillis();
@@ -1502,11 +1792,13 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			//System.out.println(docHTML.toString());
 
 
-			ActionReturn act_return = doPreActionProcessing(docHTML, bGet);
+			//the login page is opened, never saved, whatever the request was for
+			if(m_bServingLoginPage) bOpenPage = true;
+			ActionReturn act_return = doPreActionProcessing(docHTML, bOpenPage);
 			if(act_return!=null && act_return.HasStreamed) return RET_DO_NOTHING;
 			if(act_return==null || ((act_return.RedirectTo==null || act_return.RedirectTo.length()==0) && act_return.bBuffer==null))
 			{
-				act_return = runActionOnDocument(docHTML, null, bGet);
+				act_return = runActionOnDocument(docHTML, null, bOpenPage);
 				if(act_return!=null && act_return.HasStreamed) return RET_DO_NOTHING;
 			}  
 
@@ -1559,7 +1851,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	 * @param docHTML
 	 * @param bGet
 	 */
-	private ActionReturn doPreActionProcessing(HTMLDocument docHTML, boolean bGet)
+	private ActionReturn doPreActionProcessing(HTMLDocument docHTML, boolean bOpenPage)
 	{
 		if(m_bIsInErrorState) return null;
 		//only run this on pages and actions
@@ -1568,12 +1860,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		ActionReturn act_return=null;
 		int iLoop=1;
 		String sActionType = DesignElement.PARAMETER_OPENACTION;
-		if(!bGet) sActionType = DesignElement.PARAMETER_SAVEACTION;
+		if(!bOpenPage) sActionType = DesignElement.PARAMETER_SAVEACTION;
 
 		String szPreAction = getAppParam(m_pSession, sActionType, docHTML.rPath.Group, docHTML.rPath.Application);
 		while(szPreAction!=null)
 		{
-			act_return = runActionOnDocument(docHTML, szPreAction, bGet);
+			act_return = runActionOnDocument(docHTML, szPreAction, bOpenPage);
 			//if this is a redirect, do it, other wise keep processing
 			//this action type cannot write out
 			if(act_return!=null && act_return.RedirectTo!=null && act_return.RedirectTo.length()>0) return act_return;
@@ -1756,6 +2048,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		if(m_pSession!=null) extra_headers.add(m_pSession.getCookieString());
 		//long lStart = System.currentTimeMillis();
 		String sEnforcedPath = enforceDocumentRoot(document_path);
+		//cgi programs are not run, and their files must not be served as static content either (it would expose their source)
+		if(isCGIPath(sEnforcedPath))
+		{
+			sendCGINotSupported();
+			return;
+		}
 		String szRequestPath = m_http_server.HTTP_PublicDir + sEnforcedPath;
 		//long lEnd = System.currentTimeMillis();
 		//System.out.println((lEnd-lStart) + "ms 1");
@@ -1767,6 +2065,12 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		{
 			m_pSystem.doError("HTTPRequest.NoPublicDir", this);
 			sendBadRequestError();
+			return;
+		}
+		//also check where the path really goes, eg "/./cgi-bin/x" or "/a/./../cgi-bin/x" reach the cgi-bin folder
+		if(isInCGIFolder(m_http_server.HTTP_PublicDir, szRequestPath))
+		{
+			sendCGINotSupported();
 			return;
 		}
 		//Determine if we are allowed to serve files to Anonymous users...
@@ -1781,37 +2085,6 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 					serveFile(RET_FORBIDDEN, fErr, null);
 				return;
 			}
-		}
-
-		//CGI-BIN
-		if(sEnforcedPath.startsWith("/cgi-bin"))
-		{
-			//StrisEnforcedPath);
-			//System.out.println("RUNNING: "+req.Application);
-			RunProgram rp = new RunProgram(); 
-			String sCommandLine[] = new String[]{szRequestPath}; 
-			String sEnvironmentArray[]=makeCGIEnvironment(sRequestURI);
-			byte buf[]=null;
-			int iReturnVal = rp.execute(sCommandLine, sEnvironmentArray, m_pSystem.getTempDir(), m_is.getInputStream());
-			if(iReturnVal!=0) 
-			{ 
-				//m_pSystem.doError(sEnforcedPath + " returned " + iReturnVal, this);
-				buf = rp.getCommandErrorOutput();       
-			} 
-			else 
-			{ 
-				buf = rp.getCommandOutput(); 
-			} 
-			try
-			{
-				streamToClient(buf);
-				m_os.flush();
-
-			}catch(Exception e){}
-			//System.out.println("CGI-BIN REQUEST: " + sEnforcedPath);
-			//System.out.println("PATH TO FILE   : " + szRequestPath);
-			m_bCloseConnection = true;
-			return;
 		}
 
 		File fToServe = new File(szRequestPath);
@@ -1829,56 +2102,40 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	}
 
 	/**
-	 * Make the CGI environment variables.
+	 * @return true for "/cgi-bin" or anything below it, in any case (file systems may be case-insensitive)
 	 */
-	private String[] makeCGIEnvironment(String sRequestURI)
+	static boolean isCGIPath(String sPath)
 	{
-		if(sRequestURI==null) sRequestURI="";
-		String sPathInfo = "";
-		String sQueryString="";
-		int iPos = sRequestURI.indexOf('?');
-		if(iPos>=0) 
-		{
-			sPathInfo = sRequestURI.substring(iPos);
-			sQueryString= sRequestURI.substring(iPos+1);
-		}        
+		if(sPath==null) return false;
+		String sLow = sPath.toLowerCase();
+		return sLow.equals("/cgi-bin") || sLow.startsWith("/cgi-bin/") || sLow.startsWith("/cgi-bin?");
+	}
 
-		ArrayList<String> arr = new ArrayList<String>();
-		arr.add("SERVER_SOFTWARE="+m_pSystem.getVersionString());
-		arr.add("SERVER_NAME="+m_pSystem.getSystemHostName());
-		arr.add("GATEWAY_INTERFACE=CGI/1.1");
-
-		arr.add("REQUEST_URI="+sRequestURI);
-		arr.add("PATH_INFO="+sPathInfo);
-		arr.add("QUERY_STRING="+sQueryString);
-		arr.add("DOCUMENT_ROOT="+m_http_server.HTTP_PublicDir);
-		arr.add("HTTP_ACCEPT="+puakma.util.Util.getMIMELine(m_environment_lines, "Accept"));
-		arr.add("HTTP_ACCEPT_CHARSET="+puakma.util.Util.getMIMELine(m_environment_lines, "Accept-Charset"));
-		arr.add("HTTP_ACCEPT_ENCODING="+puakma.util.Util.getMIMELine(m_environment_lines, "Accept-Encoding"));
-		arr.add("HTTP_ACCEPT_LANGUAGE="+puakma.util.Util.getMIMELine(m_environment_lines, "Accept-Language"));
-		arr.add("HTTP_CONNECTION="+puakma.util.Util.getMIMELine(m_environment_lines, "Connection"));
-		arr.add("HTTP_HOST="+puakma.util.Util.getMIMELine(m_environment_lines, "Host"));
-		arr.add("HTTP_KEEP_ALIVE="+puakma.util.Util.getMIMELine(m_environment_lines, "Keep-Alive"));
-		String sReferer = puakma.util.Util.getMIMELine(m_environment_lines, "Referer");
-		if(sReferer!=null) arr.add("HTTP_Referer="+sReferer);
-		arr.add("HTTP_USER_AGENT="+puakma.util.Util.getMIMELine(m_environment_lines, "User-Agent"));
-		arr.add("PATH="+System.getProperty("java.library.path"));
-		arr.add("REMOTE_ADDR="+m_pSession.getHostAddress());
-		InetSocketAddress addr = (InetSocketAddress)m_sock.getRemoteSocketAddress();
-		arr.add("REMOTE_PORT="+addr.getPort());
-		arr.add("REQUEST_METHOD="+m_sInboundMethod);
-		arr.add("SERVER_ADDR="+m_sock.getLocalAddress().getHostAddress());
-		arr.add("SERVER_PORT="+m_sock.getLocalPort());
-		arr.add("SERVER_PROTOCOL="+m_sHTTPVersion);
-		String sContentLength = puakma.util.Util.getMIMELine(m_environment_lines, "Content-Length");
-		if(sContentLength!=null)
+	/**
+	 * @return true if the file resolves to the public folder's cgi-bin folder or anything in it. 
+	 * Compared without case, as file systems may be case-insensitive. Fails closed (true) if it can't tell.
+	 */
+	static boolean isInCGIFolder(String sPublicDir, String sFilePath)
+	{
+		try
 		{
-			arr.add("CONTENT_LENGTH="+sContentLength); 
+			String sFile = new File(sFilePath).getCanonicalPath().toLowerCase();
+			String sCGI = new File(sPublicDir, "cgi-bin").getCanonicalPath().toLowerCase();
+			return sFile.equals(sCGI) || sFile.startsWith(sCGI + File.separator);
 		}
+		catch(IOException ioe)
+		{
+			return true;
+		}
+	}
 
-		//check for nulls!!
-
-		return puakma.util.Util.objectArrayToStringArray(arr.toArray());
+	/**
+	 * CGI support has been removed from the server
+	 */
+	private void sendCGINotSupported()
+	{
+		m_pSystem.doDebug(pmaLog.DEBUGLEVEL_STANDARD, "CGI is not supported: '%s'", new String[]{m_sInboundPath}, m_pSession);
+		sendHTTPResponse(501, "Not Implemented", null, HTTP_VERSION, "text/plain", "CGI is not supported by this server".getBytes());
 	}
 
 	/**
@@ -2141,6 +2398,8 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 	{
 
 		if(extra_headers==null) extra_headers = new ArrayList<String>();
+		//204 and 304 must never carry a body, eg an action replying 204 would otherwise send "Action Done: ..."
+		if(http_code==204 || http_code==RET_NOT_MODIFIED) http_response_body = null;
 		if(null==http_response_body)
 		{
 			//redirects, 1xx, 204 No Content and plain OK get an empty body, not the default error page

@@ -23,6 +23,7 @@ package puakma.system;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -195,11 +196,10 @@ public class Document implements ErrorDetect,Cloneable
 	 * @param lContentLength
 	 */
 	private void readIntoFile(String szPageName, ByteStreamReader is, String szContentType, long lContentLength)
-	{    
-		char charBuf[]=new char[UPLOAD_CHUNK_SIZE];
+	{
 		File fData=null;
 		OutputStream fout=null;
-		boolean bIsMem=false;    
+		boolean bIsMem=false;
 
 		try
 		{
@@ -211,23 +211,17 @@ public class Document implements ErrorDetect,Cloneable
 			else //short request, so cache it in memory
 			{
 				bIsMem=true;
-				fout = new ByteArrayOutputStream((int)lContentLength);
+				fout = new ByteArrayOutputStream((int)Math.max(lContentLength, 0));
 			}
-			long lTotalRead = 0;
-			int iRead=0;
-			while(lTotalRead<lContentLength)
-			{
-				iRead = is.read(charBuf);
-				lTotalRead += iRead;
-				byte buf[]=new byte[iRead];
-				for(int p=0; p<iRead; p++) buf[p] = (byte)(charBuf[p]);        
-				fout.write(buf);        
-				buf=null;
-			}
-			fout.flush();
+			readBody(is, lContentLength, fout);
 			fout.close();
 		}
-		catch(Exception e){}
+		catch(Exception e)
+		{
+			//eg the client disconnected part way through. Don't pass a truncated body on to the application
+			failCreate(szPageName, e, fout, fData);
+			return;
+		}
 
 		//now add the item to the document
 		if(bIsMem)
@@ -240,6 +234,38 @@ public class Document implements ErrorDetect,Cloneable
 	}
 
 	/**
+	 * Copy exactly lContentLength bytes of request body to out. Never reads past the body, so a following
+	 * request on a keep-alive connection is left intact.
+	 * @throws EOFException if the stream ends early, eg the client disconnected
+	 */
+	private static void readBody(ByteStreamReader is, long lContentLength, OutputStream out) throws IOException
+	{
+		byte buf[] = new byte[UPLOAD_CHUNK_SIZE];
+		long lTotalRead = 0;
+		while(lTotalRead<lContentLength)
+		{
+			int iRead = is.read(buf, 0, (int)Math.min(buf.length, lContentLength-lTotalRead));
+			if(iRead<0) throw new EOFException("Request body ended after " + lTotalRead + " of " + lContentLength + " bytes");
+			out.write(buf, 0, iRead);
+			lTotalRead += iRead;
+		}
+		out.flush();
+	}
+
+	/**
+	 * Mark the document as not created (the caller replies 400) and clean up
+	 */
+	private void failCreate(String sPageName, Exception e, OutputStream out, File fTemp)
+	{
+		pSystem.doError("Document.Construct", new String[]{sPageName, e.toString()}, pSystem);
+		if(out!=null) try{ out.close(); }catch(Exception ce){}
+		if(fTemp!=null) fTemp.delete();
+		removeAllItems();
+		addItemOnCreate(Document.ERROR_FIELD_NAME, e.toString());
+		m_bDocumentCreatedOK = false;
+	}
+
+	/**
 	 * Creates the items on a document from a standard page submit
 	 * @param szPageName
 	 * @param is
@@ -248,22 +274,16 @@ public class Document implements ErrorDetect,Cloneable
 	 */
 	private void readStandardPageSubmit(String szPageName, ByteStreamReader is, String szContentType, long lContentLength, String sCharset)
 	{
-		byte charBuf[]=new byte[(int)lContentLength];
-		//byte bufToProcess[]=null;
-		//StringBuilder sbData = new StringBuilder(iContentLength);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream((int)lContentLength);
+		ByteArrayOutputStream baos = new ByteArrayOutputStream((int)Math.max(lContentLength, 0));
 		try
-		{      
-			long lTotalRead = 0;
-			int iRead=0;
-			while(lTotalRead<lContentLength)
-			{
-				iRead = is.read(charBuf);
-				lTotalRead += iRead;
-				baos.write(charBuf, 0 , iRead);
-			}
+		{
+			readBody(is, lContentLength, baos);
 		}
-		catch(Exception e){}
+		catch(Exception e)
+		{
+			failCreate(szPageName, e, null, null);
+			return;
+		}
 
 		PageName=szPageName;
 		String sb=null;

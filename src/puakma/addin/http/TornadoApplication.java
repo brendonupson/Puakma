@@ -1670,10 +1670,11 @@ public class TornadoApplication implements ErrorDetect
 	 * 
 	 * @return
 	 */
-	public boolean clearClassLoader() 
+	public synchronized boolean clearClassLoader() 
 	{
 		if(m_sacl!=null)
 		{
+			m_sacl.close();
 			m_sacl = null;
 			System.out.println(getRequestPath().getPathToApplication() + " classloader cleared");
 			return true;

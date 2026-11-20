@@ -29,9 +29,12 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Map;
 import java.util.Vector;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -75,6 +78,13 @@ public class pmaClassLoader extends ClassLoader
 	 * It may be empty when only system classes are controlled.
 	 */
 	private Vector<File> repository;
+
+	/**
+	 * Open zip/jar files from the repository, keyed by File. Opening a ZipFile
+	 * parses its central directory, so each jar is opened once and kept open
+	 * for the life of this classloader. Guarded by synchronized(m_zips).
+	 */
+	private final Map<File, ZipFile> m_zips = new HashMap<File, ZipFile>();
 
 	/**
 	 * Private class used to maintain information about the classes that
@@ -199,8 +209,8 @@ public class pmaClassLoader extends ClassLoader
 					classData =
 							loadClassFromZipfile(file, name, classCache);
 				}
-			} catch(IOException ioe) {
-				// Error while reading in data, consider it as not found
+			} catch(IOException | IllegalStateException ioe) {
+				// Error while reading in data (or jar closed by close()), consider it as not found
 				classData = null;
 			}
 
@@ -340,8 +350,8 @@ public class pmaClassLoader extends ClassLoader
 		if (!Character.isJavaIdentifierStart(classFileName.charAt(0))) {
 			// Find real beginning of class name
 			int start = 1;
-			while (!Character.isJavaIdentifierStart(
-					classFileName.charAt(start++)));
+			while (start < classFileName.length() && !Character.isJavaIdentifierStart(classFileName.charAt(start))) start++;
+			if(start >= classFileName.length()) return null;
 			classFileName = classFileName.substring(start);
 		}
 
@@ -349,12 +359,7 @@ public class pmaClassLoader extends ClassLoader
 
 		if (classFile.exists()) {
 			cache.origin = classFile;
-			InputStream in = new FileInputStream(classFile);
-			try {
-				return loadBytesFromStream(in, (int) classFile.length());
-			} finally {
-				in.close();
-			}
+			return readFully(new FileInputStream(classFile), classFile.length());
 		} else {
 			// Not found
 			return null;
@@ -373,87 +378,70 @@ public class pmaClassLoader extends ClassLoader
 		// Translate class name to file name
 		String classFileName = name.replace('.', '/') + ".class";
 
-		//System.out.print(file.getName() + " loading: "+classFileName);
-		ZipFile zipfile=null;
+		ZipFile zipfile = getZipFile(file);
+		ZipEntry entry = zipfile.getEntry(classFileName);
+		if(entry == null) return null;
 
-		try 
+		cache.origin = file;
+		return readFully(zipfile.getInputStream(entry), entry.getSize());
+	}
+
+	/**
+	 * Get the open ZipFile for a repository jar, opening it on first use.
+	 */
+	private ZipFile getZipFile(File file) throws IOException
+	{
+		synchronized(m_zips)
 		{
-			zipfile = new ZipFile(file);
-			ZipEntry entry = zipfile.getEntry(classFileName);
-			if (entry != null) 
+			ZipFile zipfile = m_zips.get(file);
+			if(zipfile == null)
 			{
-				cache.origin = file;
-				//System.out.println("... OK");
-				return loadBytesFromStream(zipfile.getInputStream(entry),
-						(int) entry.getSize());
-			} 
-			else 
-			{
-				//System.out.println(" !!!");
-				// Not found
-				return null;
+				zipfile = new ZipFile(file);
+				m_zips.put(file, zipfile);
 			}
-		} 
-		catch(java.lang.OutOfMemoryError ome)
-		{
-			//System.gc();
-			try{Thread.sleep(5000);} catch(Exception e){}
-			System.err.println("ERROR processing zip: " + file.getAbsolutePath() + " entry:" + classFileName);
-			ome.printStackTrace();			
+			return zipfile;
 		}
-		catch(Throwable t)
-		{
-			System.err.println("ERROR processing zip: " + file.getAbsolutePath() + " entry:" + classFileName);
-			t.printStackTrace();
-		}
-		finally 
-		{
-			if(zipfile!=null) zipfile.close();
-		}
-		return null;
-	}
-
-
-	/**
-	 * Loads all the bytes of an InputStream.
-	 */
-	private byte[] loadBytesFromStream(InputStream in, int length)
-			throws IOException
-	{
-		byte[] buf = new byte[length];
-		int nRead, count = 0;
-
-		while ((length > 0) && ((nRead = in.read(buf,count,length)) != -1))
-		{
-			count += nRead;
-			length -= nRead;
-		}
-
-		return buf;
 	}
 
 	/**
-	 * Read until end of stream
-	 * @param in
-	 * @return
-	 * @throws IOException
+	 * Close all the jar files held open by this classloader. Called when the
+	 * server stops and this classloader is about to be discarded.
 	 */
-	/*private byte[] loadBytesFromStream(InputStream in) throws IOException
+	public void close()
 	{
-		int iBufSize = 2048;
-		byte[] buf = new byte[iBufSize];
-		int nRead, count = 0;
-		ByteArrayOutputStream baos = new ByteArrayOutputStream(iBufSize);
-
-		while(((nRead = in.read(buf)) != -1))
+		synchronized(m_zips)
 		{
-			count += nRead;
-			//length -= nRead;
-			baos.write(buf, 0, nRead);
+			for(ZipFile zipfile : m_zips.values())
+			{
+				try{ zipfile.close(); } catch(IOException ignored){}
+			}
+			m_zips.clear();
 		}
+	}
 
-		return baos.toByteArray();
-	}*/
+	/**
+	 * Reads all the bytes of an InputStream then closes it. sizeHint is the
+	 * expected length, or -1 if unknown (eg zip entries without a size).
+	 */
+	private static byte[] readFully(InputStream in, long sizeHint) throws IOException
+	{
+		try
+		{
+			int iInitial = (sizeHint > 0 && sizeHint < Integer.MAX_VALUE) ? (int)sizeHint : 8192;
+			ByteArrayOutputStream baos = new ByteArrayOutputStream(iInitial);
+			byte[] buf = new byte[Math.min(iInitial, 65536)];
+			int nRead;
+			while((nRead = in.read(buf)) != -1)
+			{
+				baos.write(buf, 0, nRead);
+			}
+			return baos.toByteArray();
+		}
+		finally
+		{
+			in.close();
+		}
+	}
 
 	/**
 	 * Get an InputStream on a given resource.  Will return null if no
@@ -531,55 +519,35 @@ public class pmaClassLoader extends ClassLoader
 	 */
 	private InputStream loadResourceFromZipfile(File file, String name) 
 	{
-		ZipFile zipfile = null; 
-
 		try 
 		{
-			zipfile = new ZipFile(file);
+			ZipFile zipfile = getZipFile(file);
 			ZipEntry entry = zipfile.getEntry(name);
+			if(entry == null) return null;
 
-			if (entry != null) 
-			{   
-				ByteArrayOutputStream baos = new ByteArrayOutputStream((int)entry.getSize());                
-				InputStream is = zipfile.getInputStream(entry);
-				byte buf[]=new byte[(int)entry.getSize()];
-				int iRead = is.read(buf);
-				while(iRead>0)
-				{
-					baos.write(buf, 0, iRead);
-					iRead = is.read(buf);
-				}
-				if(baos.size()<=0) return null;                
-				ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-				//System.out.println("... OK");
-				return (InputStream)bais;
-			} 
-			else 
-			{
-				//System.out.println(name + "... NOT FOUND !!");
-				return null;
-			}
+			return new ByteArrayInputStream(readFully(zipfile.getInputStream(entry), entry.getSize()));
 		} 
-		catch(java.lang.OutOfMemoryError ome)
-		{
-			ome.printStackTrace();
-			return null;
-		}
-		catch(IOException e) 
+		catch(IOException | IllegalStateException e) 
 		{
 			return null;
 		} 
-		finally 
+	}
+
+	/**
+	 * Get a URL for a resource in this classloader's repository, or null if the
+	 * repository element does not contain it.
+	 */
+	private URL getResourceURL(File file, String name) throws IOException
+	{
+		if(file.isDirectory())
 		{
-			if ( zipfile != null ) 
-			{                
-				try 
-				{
-					zipfile.close();
-				} 
-				catch ( IOException ignored ){ }
-			}
+			File resFile = new File(file, name.replace('/', File.separatorChar));
+			if(resFile.exists()) return resFile.toURI().toURL();
+			return null;
 		}
+
+		if(getZipFile(file).getEntry(name) == null) return null;
+		return new URL("jar:" + file.toURI() + "!/" + name);
 	}
 
 	/**
@@ -600,27 +568,8 @@ public class pmaClassLoader extends ClassLoader
 		Enumeration<File> repEnum = repository.elements();
 		while (repEnum.hasMoreElements())
 		{
-			File file = repEnum.nextElement();
-			if (file.isDirectory())
-			{
-				String fileName = name.replace('/', File.separatorChar);
-				File resFile = new File(file, fileName);
-				if (resFile.exists())
-				{
-					urls.add(new URL("file", null, resFile.getAbsolutePath()));
-				}
-			}
-			else
-			{
-				try (ZipFile zf = new ZipFile(file))
-				{
-					ZipEntry ze = zf.getEntry(name);
-					if (ze != null)
-					{
-						urls.add(new URL("jar:file:" + file.getAbsolutePath() + "!/" + name));
-					}
-				}
-			}
+			URL u = getResourceURL(repEnum.nextElement(), name);
+			if(u != null) urls.add(u);
 		}
 		return urls.elements();
 	}
@@ -654,43 +603,20 @@ public class pmaClassLoader extends ClassLoader
 		Enumeration<File> repEnum = repository.elements();
 		while (repEnum.hasMoreElements()) 
 		{
-			File file = repEnum.nextElement();
-			// Construct a file://-URL if the repository is a directory
-			if (file.isDirectory()) 
+			try 
 			{
-				String fileName = name.replace('/', File.separatorChar);
-				File resFile = new File(file, fileName);
-				if (resFile.exists()) {
-					// Build a file:// URL form the file name
-					try {
-						return new URL("file", null, resFile.getAbsolutePath());
-					} catch(java.net.MalformedURLException badurl) {
-						badurl.printStackTrace();
-						return null;
-					}
-				}
+				u = getResourceURL(repEnum.nextElement(), name);
+				if(u != null) return u;
+			} 
+			catch(MalformedURLException badurl) 
+			{
+				badurl.printStackTrace();
+				return null;
 			}
-			else 
+			catch(IOException ioe) 
 			{
-				// a jar:-URL *could* change even between minor releases, but
-				// didn't between JVM's 1.1.6 and 1.3beta. Tested on JVM's from
-				// IBM, Blackdown, Microsoft, Sun @ Windows and Sun @Solaris
-				try {
-					ZipFile zf = new ZipFile(file.getAbsolutePath());
-					ZipEntry ze = zf.getEntry(name);
-
-					if (ze != null) {
-						try {
-							return new URL("jar:file:" + file.getAbsolutePath() + "!/" + name);
-						} catch(java.net.MalformedURLException badurl) {
-							badurl.printStackTrace();
-							return null;
-						}
-					}
-				} catch (IOException ioe) {
-					ioe.printStackTrace();
-					return null;
-				}
+				ioe.printStackTrace();
+				return null;
 			}
 		}
 

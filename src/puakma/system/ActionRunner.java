@@ -230,11 +230,10 @@ public class ActionRunner implements ActionRunnerInterface,ErrorDetect
 	 *  All the programmer's action code goes here. Override this method.
 	 * @return the URL to redirect the client to. Use null or "" if you do not want a redirect.
 	 * Supports both "/group/app.pma" and http://server/group/app.html" syntax.
-	 * 
 	 */
 	public String execute()
 	{
-		return getDBURL();
+		throw new UnsupportedOperationException(getClass().getName() + " must implement execute()");		
 	}
 
 	/**

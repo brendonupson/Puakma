@@ -144,8 +144,18 @@ public class ByteStreamReader extends Reader
     public int read(byte[] buf) throws java.io.IOException
     {
         if(buf==null || buf.length==0) return 0;
-                
+
         return m_is.read(buf);
+    }
+
+    /**
+     * Read up to iLen bytes into buf. Use this to read an exact amount (eg a request body) without
+     * consuming any data that follows it on the stream.
+     * @return the number of bytes read, or -1 at the end of the stream
+     */
+    public int read(byte[] buf, int iOffset, int iLen) throws java.io.IOException
+    {
+        return m_is.read(buf, iOffset, iLen);
     }
     
     

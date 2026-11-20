@@ -21,7 +21,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 package puakma.addin.http.action;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -39,6 +38,7 @@ import puakma.addin.http.document.DesignElement;
 import puakma.system.RequestPath;
 import puakma.system.SystemContext;
 import puakma.util.ClassData;
+import puakma.util.Util;
 
 
 /**
@@ -58,7 +58,8 @@ public class SharedActionClassLoader extends ClassLoader
 	//on every request when the design name differs from the class name
 	private Hashtable<String, String> m_htDesignToClass=new Hashtable<String, String>(30);
 	//private int m_iTypeToLoad = 0;
-	private Vector<File> m_vJars = new Vector<File>(); //all File objects for jar files
+	private Vector<ZipFile> m_vJars = new Vector<ZipFile>(); //open temp jar files, kept open for resource lookups
+	private volatile boolean m_bClosed = false;
 
 	public final static String LIBRARY="UseLibrary";
 
@@ -183,6 +184,7 @@ public class SharedActionClassLoader extends ClassLoader
 				if(des.m_sFullClassName!=null)
 				{
 					loadClassData(classContent, des.m_sFullClassName, sDesignElementName);
+					sClassName = des.m_sFullClassName;
 				}
 				else
 				{
@@ -210,22 +212,14 @@ public class SharedActionClassLoader extends ClassLoader
 			return cache_entry.m_sClassName;
 		}
 
-		String sClassName = m_htDesignToClass.get(sDesignActionName.toLowerCase());
-		if(sClassName!=null) return sClassName;
-
-		Enumeration<ClassCacheEntry> en = m_cache.elements();
-		while(en.hasMoreElements())
-		{
-			ClassCacheEntry cache_entry = (ClassCacheEntry)en.nextElement();
-			if(cache_entry.m_sDesignName.equalsIgnoreCase(sDesignActionName)) return cache_entry.m_sClassName;
-		}
-
-		return null;
+		//every cached class with a design name is indexed here, so no need to scan m_cache
+		return m_htDesignToClass.get(sDesignActionName.toLowerCase());
 	}
 
 	/**
 	 * Determine the actual classname to run based on the design element name. If it
 	 * is not found it will try to load the data from the db.
+	 * @return the class, or null if it could not be found (the error is logged)
 	 */
 	public synchronized Class getActionClass(String sDesignElementName, int iDesignType) throws ClassNotFoundException
 	{    
@@ -234,109 +228,62 @@ public class SharedActionClassLoader extends ClassLoader
 		{
 			sActionClassName = loadDesignData(sDesignElementName, iDesignType);
 		}    
-		//System.out.println(sActionClassName);
-		return loadClass(sActionClassName, true);
-	}
 
-
-	protected Class findClass(String className) 
-	{
-		Class c = null;
-		try
+		if(sActionClassName!=null && sActionClassName.length()>0)
 		{
-			c = loadClass(className, false);
+			try
+			{
+				return loadClass(sActionClassName, true);
+			}
+			catch(ClassNotFoundException cnfe){}
 		}
-		catch(Exception e)
-		{}
 
-		return c;
+		m_pSystem.doError("ActionClassLoader.ClassNotFound", new String[]{sActionClassName==null ? sDesignElementName : sActionClassName, m_sBasePath}, m_pSystem);
+		return null;
 	}
 
 	/**
-	 * Resolves the specified name to a Class. The method loadClass()
-	 * is called by the virtual machine.  As an abstract method,
-	 * loadClass() must be defined in a subclass of ClassLoader.
+	 * Resolves the specified name to a Class. Classes from this application's design
+	 * elements are tried first, then the parent classloader.
+	 * Synchronized as this is the context classloader for actions, so may be called 
+	 * concurrently from many threads; two threads must not define the same class.
 	 *
 	 * @param      name the name of the desired Class.
-	 * @param      resolve true if the Class needs to be resolved;
-	 *             false if the virtual machine just wants to determine
-	 *             whether the class exists or not
+	 * @param      resolve true if the Class needs to be resolved
 	 * @return     the resulting Class.
 	 * @exception  ClassNotFoundException  if the class loader cannot
 	 *             find a the requested class.
 	 */
-	//synchronized?
-	protected Class loadClass(String name, boolean resolve) throws ClassNotFoundException
+	protected synchronized Class loadClass(String name, boolean resolve) throws ClassNotFoundException
 	{
-
-		if(name==null || name.length()==0) return null;
-		// The class object that will be returned.
-		Class c = null; 
-
-		boolean bFound=false;
-
+		if(name==null || name.length()==0) throw new ClassNotFoundException(name);
 
 		//try loading the class from this classloader first
 		ClassCacheEntry cache_entry = (ClassCacheEntry)m_cache.get(name);
-		if(cache_entry!=null)
+		if(cache_entry==null) return getParent().loadClass(name);
+
+		if(!cache_entry.m_bIsDefined) 
 		{
-			if(!cache_entry.m_bIsDefined) 
+			String sPackageName = cache_entry.getPackageName();
+			Package pkg = getPackage(sPackageName);
+			if(pkg==null)
 			{
-				//System.out.println("classname=["+cache_entry.m_sClassName + "]" + cache_entry.getPackageName());
-				//todo define package??
-				String sPackageName = cache_entry.getPackageName();
-				Package pkg = getPackage(sPackageName);
-				if(pkg==null)
-				{
-					//System.out.println("definePackage: classname=["+cache_entry.m_sClassName + "]" + cache_entry.getPackageName());
-					definePackage(sPackageName, cache_entry.m_sClassName, "specversion",
-							"TornadoServer",  "impltitle", "implversion",
-							"implVendor", null);
-				}
-				//else
-				//	System.out.println(cache_entry.getPackageName() + " is already defined");
-				c = defineClass(cache_entry.m_sClassName, cache_entry.m_ClassData, 0, cache_entry.m_ClassData.length);				
-				cache_entry.m_bIsDefined = true;
-				cache_entry.m_ClassObject = c;
+				definePackage(sPackageName, cache_entry.m_sClassName, "specversion",
+						"TornadoServer",  "impltitle", "implversion",
+						"implVendor", null);
 			}
-			//System.out.println(name+" defined");
-			if(!cache_entry.m_bIsResolved && resolve) 
-			{
-				resolveClass(c);				
-				cache_entry.m_bIsResolved = true;
-			}
-			//if already defined, used the cached version
-			if(c==null) c = cache_entry.m_ClassObject;
-
-			//System.out.println(name+" resolved");
-			bFound = true;
+			cache_entry.m_ClassObject = defineClass(cache_entry.m_sClassName, cache_entry.m_ClassData, 0, cache_entry.m_ClassData.length);
+			cache_entry.m_ClassData = null; //no longer needed, the JVM has its own copy
+			cache_entry.m_bIsDefined = true;
 		}
 
-		if(!bFound) //if that fails, then default to parent class loaders
-		{			
-			//NB: BJU 12/7/07 swapped order due to odd outofmemory exceptions in parent loader
-			try
-			{			
-				ClassLoader clParent = this.getClass().getClassLoader();
-				c = clParent.loadClass(name);
-				if(c!=null) return c;
-			}
-			catch(java.lang.OutOfMemoryError ome)
-			{
-				ome.printStackTrace();
-				return null;
-			}		
-			catch(Throwable cnfe){}
+		if(resolve && !cache_entry.m_bIsResolved) 
+		{
+			resolveClass(cache_entry.m_ClassObject);				
+			cache_entry.m_bIsResolved = true;
 		}
 
-
-		if(!bFound)
-		{			
-			m_pSystem.doError("ActionClassLoader.ClassNotFound", new String[]{name, m_sBasePath}, m_pSystem);
-			return null;          
-		}
-
-		return c;
+		return cache_entry.m_ClassObject;
 	}
 
 	/**
@@ -345,66 +292,64 @@ public class SharedActionClassLoader extends ClassLoader
 	private boolean loadFromZIP(String szDesignName, byte[] data)
 	{
 		File fileTmp = null;
-		ZipEntry entry;
+		ZipFile zipfile = null;
 		try
 		{
 			fileTmp = File.createTempFile(String.valueOf(m_pSystem.getUniqueNumber())+"_zip_", null, m_pSystem.getTempDir() );
-			fileTmp.deleteOnExit();
-			FileOutputStream fout = new FileOutputStream(fileTmp);
-			fout.write(data);
-			fout.flush();
-			fout.close();
-
-			ZipFile zipfile = new ZipFile(fileTmp);      
-			Enumeration e = zipfile.entries();
-			while(e.hasMoreElements())
+			fileTmp.deleteOnExit(); //close() deletes it on reload; this catches loaders still live at shutdown
+			try(FileOutputStream fout = new FileOutputStream(fileTmp))
 			{
-				entry = (ZipEntry)e.nextElement();
-				if(!entry.isDirectory() && entry.getName().endsWith(".class"))
-				{
-					InputStream is = zipfile.getInputStream(entry);
-					int iTotal = (int)entry.getSize();
-					int iTotalRead=0;
-					byte[] buffer = new byte[iTotal];
-					byte[] readbuf = new byte[65536]; //max 64K chunks?
-					while(iTotalRead<iTotal)
-					{
-						int iRead = is.read(readbuf);
-						System.arraycopy(readbuf, 0, buffer, iTotalRead, iRead);
-						iTotalRead += iRead;
-					}
-					//System.out.println("Read " + iTotalRead + " bytes for " + entry.getName());
-					is.close();
-					//String szName = entry.getName().replace('/', '.');
-					ClassData cd = new ClassData(new ByteArrayInputStream(buffer));            
-
-					if(cd.isValidClass())
-					{
-						//if(!m_cache.containsKey(cd.m_FullName))
-						//{
-						loadClassData(buffer, cd.m_FullName, szDesignName);
-						//}
-					}//if valid class
-				}
+				fout.write(data);
 			}
 
-			zipfile.close();
-			//fileTmp.delete();
-		}
-		catch(java.lang.OutOfMemoryError ome)
-		{
-			//System.gc();
-			try{ Thread.sleep(1000); } catch(Exception e){}
-			return false;
+			zipfile = new ZipFile(fileTmp);      
+			Enumeration<? extends ZipEntry> e = zipfile.entries();
+			while(e.hasMoreElements())
+			{
+				ZipEntry entry = e.nextElement();
+				if(entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
+
+				try
+				{
+					byte[] buffer = Util.readStreamToByteArray(zipfile.getInputStream(entry));
+					ClassData cd = new ClassData(new ByteArrayInputStream(buffer));            
+					if(cd.isValidClass()) loadClassData(buffer, cd.m_FullName, szDesignName);
+				}
+				catch(Exception ex) //skip just this entry
+				{
+					m_pSystem.doError("Error reading " + entry.getName() + " from design element " + szDesignName + ": " + ex.toString(), m_pSystem);
+				}
+			}
 		}
 		catch(Exception exc)
 		{
+			if(zipfile!=null) try{ zipfile.close(); } catch(IOException ignored){}
 			if(fileTmp!=null) fileTmp.delete();
 			return false;
 		}
 
-		if(fileTmp!=null) m_vJars.add(fileTmp);
+		//keep the jar open for getResource() etc. It is closed and deleted by close()
+		m_vJars.add(zipfile);
 		return true;
+	}
+
+	/**
+	 * Close and delete the temp jar files used by this classloader. Called when the 
+	 * application's classloader is discarded (eg design reload). Classes already
+	 * loaded remain usable, but resources in jars will no longer be found.
+	 */
+	public void close()
+	{
+		m_bClosed = true;
+		synchronized(m_vJars)
+		{
+			for(ZipFile zipfile : m_vJars)
+			{
+				try{ zipfile.close(); } catch(IOException ignored){}
+				new File(zipfile.getName()).delete();
+			}
+			m_vJars.clear();
+		}
 	}
 
 	/**
@@ -432,16 +377,16 @@ public class SharedActionClassLoader extends ClassLoader
 	 */
 	public InputStream getResourceAsStream(String name) 
 	{     
-		//System.out.println("getResourceAsStream("+name+");");
-
-		for(int i=0; i<m_vJars.size(); i++)
+		if(!m_bClosed)
 		{
-			File fJar = (File)m_vJars.get(i);
-			InputStream is = loadResourceFromZipfile(fJar, name);
-			if(is!=null) return is;
+			for(ZipFile zipfile : getJars())
+			{
+				InputStream is = loadResourceFromZipfile(zipfile, name);
+				if(is!=null) return is;
+			}
 		}
 
-		ClassLoader cl = this.getClass().getClassLoader();
+		ClassLoader cl = getParent();
 		if(cl!=null) return cl.getResourceAsStream(name);      
 		return null;
 	}
@@ -470,10 +415,10 @@ public class SharedActionClassLoader extends ClassLoader
 	protected Enumeration<URL> findResources(String name) throws IOException
 	{
 		Vector<URL> urls = new Vector<URL>();
-		for(int i=0; i<m_vJars.size(); i++)
+		if(m_bClosed) return urls.elements();
+		for(ZipFile zipfile : getJars())
 		{
-			File fJar = (File)m_vJars.get(i);
-			URL u = getResourceURLFromJar(fJar, name);
+			URL u = getResourceURLFromJar(zipfile, name);
 			if(u!=null) urls.add(u);
 		}
 		return urls.elements();
@@ -485,19 +430,19 @@ public class SharedActionClassLoader extends ClassLoader
 	 */
 	public URL getResource(String name)
 	{
-		URL u = null;        
 		if (name == null) return null;
 
-		for(int i=0; i<m_vJars.size(); i++)
+		if(!m_bClosed)
 		{
-			File fJar = (File)m_vJars.get(i);
-
-			u = getResourceURLFromJar(fJar, name);
-			if(u!=null) return u;          
+			for(ZipFile zipfile : getJars())
+			{
+				URL u = getResourceURLFromJar(zipfile, name);
+				if(u!=null) return u;          
+			}
 		}
 
-		//try the classloader for this class (pmaClassLoader)
-		ClassLoader cl = this.getClass().getClassLoader();
+		//try the parent classloader (pmaClassLoader)
+		ClassLoader cl = getParent();
 		if(cl!=null) return cl.getResource(name);      
 
 		return null;
@@ -505,27 +450,28 @@ public class SharedActionClassLoader extends ClassLoader
 
 
 	/**
-	 * returns true if the jar file contains the file
+	 * Snapshot of the open jars, so resource reads don't hold the m_vJars lock
 	 */
-	private URL getResourceURLFromJar(File fJar, String sFilePath)
+	private ZipFile[] getJars()
 	{
-		//System.out.println("getResourceURLFromJar() ["+fJar.getName() + "] for:["+sFilePath+"]");
+		return m_vJars.toArray(new ZipFile[0]);
+	}
 
+	/**
+	 * returns a jar: URL if the jar file contains the file, else null
+	 */
+	private URL getResourceURLFromJar(ZipFile zipfile, String sFilePath)
+	{
 		try 
 		{
-			ZipFile zipfile = new ZipFile(fJar.getAbsolutePath());
-			ZipEntry entry = zipfile.getEntry(sFilePath);
-
-			if (entry != null)
-			{            
-				try {
-					return new URL("jar:file:" + fJar.getAbsolutePath() + "!/" + sFilePath);
-				} catch(java.net.MalformedURLException badurl) {
-					badurl.printStackTrace();
-					return null;
-				}            
-			}
-		}catch(Exception f){}
+			if(zipfile.getEntry(sFilePath) == null) return null;
+			return new URL("jar:" + new File(zipfile.getName()).toURI() + "!/" + sFilePath);
+		}
+		catch(java.net.MalformedURLException badurl) 
+		{
+			badurl.printStackTrace();
+		}
+		catch(IllegalStateException closed){} //zip was closed by close()
 
 		return null;
 	}
@@ -533,58 +479,21 @@ public class SharedActionClassLoader extends ClassLoader
 	/**
 	 * Loads resource from a zip file
 	 */
-	private InputStream loadResourceFromZipfile(File file, String name) 
+	private InputStream loadResourceFromZipfile(ZipFile zipfile, String name) 
 	{
-		ZipFile zipfile = null; 
-
-		//System.out.println("loadResourceFromZipfile() " + file.getName() + " " + name);  
 		try 
 		{
-			zipfile = new ZipFile(file);
 			ZipEntry entry = zipfile.getEntry(name);
-
-			if (entry != null) 
-			{   
-				ByteArrayOutputStream baos = new ByteArrayOutputStream((int)entry.getSize());                
-				InputStream is = zipfile.getInputStream(entry);
-				byte buf[]=new byte[(int)entry.getSize()];
-				int iRead = is.read(buf);
-				while(iRead>0)
-				{
-					baos.write(buf, 0, iRead);
-					iRead = is.read(buf);
-				}
-				if(baos.size()<=0) return null;                
-				ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-				//System.out.println("... OK");
-				return (InputStream)bais;
-			} 
-			else 
-			{
-				//System.out.println(name + "... NOT FOUND !!");
-				return null;
-			}
+			if(entry == null) return null;
+			return new ByteArrayInputStream(Util.readStreamToByteArray(zipfile.getInputStream(entry)));
 		} 
-		catch(java.lang.OutOfMemoryError ome)
-		{
-			//System.gc();
-			try{ Thread.sleep(1000); } catch(Exception e){}	
-			return null;
-		}
 		catch(IOException e) 
 		{
 			return null;
 		} 
-		finally 
+		catch(IllegalStateException closed) //zip was closed by close()
 		{
-			if ( zipfile != null ) 
-			{                
-				try 
-				{
-					zipfile.close();
-				} 
-				catch ( IOException ignored ){ }
-			}
+			return null;
 		}
 	}
 

@@ -84,7 +84,8 @@ public class HTTP extends pmaAddIn
 	private boolean m_bMinifyFileSystemJS=false;
 	private boolean m_bNoReverseDNS = false;
 	//private String[] m_sAllowMethods = new String[] {"PUT","DELETE"}; //defaults
-	private String[] m_sAllowMethods = new String[] {"CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "TRACE"}; //defaults
+	//defaults, override with HTTPAllowMethods. No TRACE (no use to applications, a cross-site tracing risk) or CONNECT (we are not a proxy)
+	private String[] m_sAllowMethods = new String[] {"DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH"};
 	private ArrayList<String> m_httpOptions = new ArrayList<String>();
 
 	/**
