@@ -434,7 +434,37 @@ public class TornadoApplication implements ErrorDetect
 	}
 
 	/**
-	 * 
+	 * Rank a design element found for a requested name, lower is better. The name matters most: the full name,
+	 * then the part before the first '/', then the part after it. For the same name, prefer action, resource,
+	 * page, then business widget, the same order as getDesignElementFromCache().
+	 * eg for "api/console" the action "api" beats the page "Console".
+	 * @param sFirstPart null if the requested name has no '/'
+	 */
+	static int getDesignMatchRank(String sName, int iDesignType, String sFullName, String sFirstPart, String sLastPart)
+	{
+		int iNameRank = 3;
+		if(sName!=null)
+		{
+			if(sName.equalsIgnoreCase(sFullName)) iNameRank = 0;
+			else if(sFirstPart!=null && sName.equalsIgnoreCase(sFirstPart)) iNameRank = 1;
+			else if(sLastPart!=null && sName.equalsIgnoreCase(sLastPart)) iNameRank = 2;
+		}
+
+		int iTypeRank;
+		switch(iDesignType)
+		{
+		case DesignElement.DESIGN_TYPE_ACTION: iTypeRank = 0; break;
+		case DesignElement.DESIGN_TYPE_RESOURCE: iTypeRank = 1; break;
+		case DesignElement.DESIGN_TYPE_PAGE: iTypeRank = 2; break;
+		case DesignElement.DESIGN_TYPE_BUSINESSWIDGET: iTypeRank = 3; break;
+		default: iTypeRank = 4;
+		}
+		return iNameRank*10 + iTypeRank;
+	}
+
+	/**
+	 * Get a design element by name. A name with a '/' in it, eg "api/staff/1", matches the full name first,
+	 * then the part before the first '/' ("api"), then the part after it ("staff/1").
 	 * @param sDesignName
 	 * @param iType
 	 * @return
@@ -450,10 +480,11 @@ public class TornadoApplication implements ErrorDetect
 			iSlashPos = sDesignName.indexOf('/');
 			if(iSlashPos>0) //eg can't be "/something", must be "actionname/something" or "something/actionname"
 			{
+				//order is full name, then first part, then last part. Only the first part is taken from the cache here:
+				//a cached last part must not win over a first part that isn't loaded yet, eg "api/console" must find
+				//the action "api" not the page "Console". The database lookup below ranks all three.
 				String sActionName = sDesignName.substring(0, iSlashPos);
-				String sExtra = sDesignName.substring(iSlashPos+1);
 				design = getDesignElementFromCache(sActionName, iType);
-				if(design==null) design = getDesignElementFromCache(sExtra, iType);
 			}
 		}
 		if(design!=null) return design;
@@ -484,30 +515,52 @@ public class TornadoApplication implements ErrorDetect
 		boolean bMultiNameCheck = iSlashPos>0;
 		if(bMultiNameCheck)
 			sNamePart = "UPPER(DESIGNBUCKET.Name) IN(?,?,?)";
-		String sQuery = "SELECT * FROM DESIGNBUCKET WHERE AppID="+lAppID+" AND "+sNamePart + sTypeClause;
+		String sQuery = "SELECT DesignBucketID,Name,DesignType FROM DESIGNBUCKET WHERE AppID="+lAppID+" AND "+sNamePart + sTypeClause;
 
 		//System.out.println(sQuery + " " + sDesignName + " " + iSlashPos + " " + iType);
 
 		String sUpperDesignName = sDesignName.toUpperCase();
+		String sFirstPart = bMultiNameCheck ? sUpperDesignName.substring(0, iSlashPos) : null;
+		String sLastPart = bMultiNameCheck ? sUpperDesignName.substring(iSlashPos+1) : null;
 		Connection cx=null;
 		PreparedStatement stmt = null;
 		ResultSet rs = null;
 		try
 		{
 			cx = m_pSystem.getSystemConnection();
-			stmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY); 
+			stmt = cx.prepareStatement(sQuery, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 			stmt.setString(1, sUpperDesignName);
 			if(bMultiNameCheck)
 			{
-				String sFirstPart = sUpperDesignName.substring(0, iSlashPos);
-				String sLastPart = sUpperDesignName.substring(iSlashPos+1);
-				//System.out.println(sFirstPart + "/" + sLastPart);
 				stmt.setString(2, sFirstPart);
 				stmt.setString(3, sLastPart);
 			}
 			rs = stmt.executeQuery();
-			if(rs.next())
-			{          
+			//more than one row may match, so pick the best rather than whichever the database returns first
+			long lBestID = -1;
+			int iBestRank = Integer.MAX_VALUE;
+			while(rs.next())
+			{
+				int iRank = getDesignMatchRank(rs.getString("Name"), rs.getInt("DesignType"), sUpperDesignName, sFirstPart, sLastPart);
+				if(iRank<iBestRank)
+				{
+					iBestRank = iRank;
+					lBestID = rs.getLong("DesignBucketID");
+				}
+			}
+			Util.closeJDBC(rs);
+			Util.closeJDBC(stmt);
+			rs = null;
+			stmt = null;
+
+			if(lBestID>=0)
+			{
+				stmt = cx.prepareStatement("SELECT * FROM DESIGNBUCKET WHERE DesignBucketID=?", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+				stmt.setLong(1, lBestID);
+				rs = stmt.executeQuery();
+			}
+			if(rs!=null && rs.next())
+			{
 				design=new DesignElement();
 
 				int iDesignBucketID = rs.getInt("DesignBucketID");
