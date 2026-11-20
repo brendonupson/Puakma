@@ -1656,7 +1656,7 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			if(bActionReply)
 				sendHTTPResponse(m_iActionReplyCode, sActionReplyText, extra_headers, HTTP_VERSION,
 						docHTML.getContentType(), docHTML.getContent());
-			else if(m_bServingLoginPage) //show the login page, but don't tell clients and crawlers the request succeeded
+			else if(m_bServingLoginPage && !m_pSession.isLoggedIn()) //show the login page, but don't tell clients and crawlers the request succeeded
 			{
 				//a 401 must carry WWW-Authenticate. A non-standard scheme stops browsers popping up their Basic login dialog
 				extra_headers.add("WWW-Authenticate: FormBased");
@@ -1792,8 +1792,9 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 			//System.out.println(docHTML.toString());
 
 
-			//the login page is opened, never saved, whatever the request was for
-			if(m_bServingLoginPage) bOpenPage = true;
+			//the login page substituted for some other page is opened, never saved. But a form posted to the
+			//login page itself (eg Login?SavePage) runs its SaveAction, which is where a custom login page logs in
+			if(m_bServingLoginPage && !isRequestForPage(document_path, docHTML.rPath.DesignElementName)) bOpenPage = true;
 			ActionReturn act_return = doPreActionProcessing(docHTML, bOpenPage);
 			if(act_return!=null && act_return.HasStreamed) return RET_DO_NOTHING;
 			if(act_return==null || ((act_return.RedirectTo==null || act_return.RedirectTo.length()==0) && act_return.bBuffer==null))
@@ -3386,6 +3387,19 @@ public class HTTPRequestManager implements pmaThreadInterface, ErrorDetect
 		String sName = sHeaderLine.substring(0, iPos).trim();
 		return sName.equalsIgnoreCase("Content-Type") || sName.equalsIgnoreCase("Content-Length")
 				|| sName.equalsIgnoreCase("Content-Encoding") || sName.equalsIgnoreCase("Content-Range");
+	}
+
+	/**
+	 * True if the url asked for the named design element, eg "/group/app.pma/Login?SavePage" and "Login"
+	 */
+	private static boolean isRequestForPage(String sRequestPath, String sDesignName)
+	{
+		if(sDesignName==null || sDesignName.length()==0) return false;
+		try
+		{
+			return sDesignName.equalsIgnoreCase(new RequestPath(sRequestPath).DesignElementName);
+		}
+		catch(Exception e) { return false; }
 	}
 
 	/**
